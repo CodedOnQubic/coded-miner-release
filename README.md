@@ -103,7 +103,6 @@ Workers will appear automatically:
 - CPU only (AVX2 / AVX512 auto-detection)  
 - CUDA not active yet  
 - Score system currently stubbed (`qatum_stub`)  
-- No KYC, no login required  
 
 ---
 
@@ -115,14 +114,6 @@ Workers will appear automatically:
 
 ---
 
-## 🧠 Vision
-
-- Native high-performance Qubic miner  
-- Integrated with CODED mining pool  
-- Scalable across CPU / GPU  
-- Fully automated deployment  
-
----
 
 ## 📣 Feedback
 
