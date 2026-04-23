@@ -1,6 +1,6 @@
 # CODED Miner (HiveOS)
 
-Minimal CPU miner for the CODED / Qubic mining pool.
+Minimal CPU miner for the CODED mining pool.
 
 ---
 
@@ -93,17 +93,9 @@ Workers will appear automatically:
 - Wallet  
 - Status: active  
 - Hashrate  
-
----
-
-## 🧪 Debug Mode
-
-Enable verbose logs:
-
 ```bash
-CODED_LOG_MODE=dev bash /hive/miners/custom/h-run.sh
+ https://codedonqubic.com/pool
 ```
-
 ---
 
 ## ⚙️ Notes
