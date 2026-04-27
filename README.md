@@ -86,14 +86,6 @@ Use the following values:
 
 ---
 
-# 📊 Output Example
-
-```
-[ $0.01 CODED ] ... | SOLS: 0/0 | RAWDIFF:16 | THRESH:16 | SCORE:qatum_real | [SCALAR] 2500 it/s
-```
-
----
-
 # 📡 Dashboard
 
 Workers appear automatically:
