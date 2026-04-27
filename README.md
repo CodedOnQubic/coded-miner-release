@@ -1,4 +1,4 @@
-# CODED Miner (HiveOS)
+# CODED Miner
 
 Minimal CPU miner for the CODED mining pool.
 
@@ -8,115 +8,124 @@ Minimal CPU miner for the CODED mining pool.
 
 This is a **test release**.
 
-- Linux binary included  
-- HiveOS custom miner wrapper included  
+- Native macOS (Apple Silicon) supported  
+- Docker (Linux / Windows / Intel Mac) supported  
+- HiveOS supported  
 - Pool connection working  
 - Worker reporting active  
 - Performance still evolving  
 
 ---
 
-## 🚀 Quick Start (HiveOS)
+# 🚀 Quick Start (1-Click)
 
-### 1. Download
-
-```bash
-cd /hive
-wget https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz
-```
-
-### 2. Install
+## 🍎 macOS (M1 / M2 / M3)
 
 ```bash
-rm -rf /hive/miners/custom/coded-miner
-mkdir -p /hive/miners/custom
-tar -xzf coded-miner-latest.tar.gz -C /hive/miners/custom
+WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
 
-### 3. Configure
+---
 
-HiveOS → **Flight Sheet → Custom Miner**
+## 🐳 Docker (Linux / Windows / Intel Mac)
 
-Use:
-
-**Pool URL**
-```
-pool.codedonqubic.com:7777
+```bash
+WALLET=YOUR_WALLET WORKER=docker bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
 
-**Wallet**
-```
-YOUR_WALLET
+---
+
+## ⚙️ Optional Parameters
+
+```bash
+WALLET=YOUR_WALLET \
+WORKER=my-rig \
+THREADS=4 \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
 
-**Worker Name**
-```
-rig-name
-```
+### Thread Control
 
-**Extra Config**
+| Value  | Behavior                |
+|--------|------------------------|
+| unset  | all CPUs - 1 (default) |
+| 1      | 1 thread               |
+| 4      | 4 threads              |
+| 0      | all CPUs - 1           |
+
+---
+
+# 🐝 HiveOS Flight Sheet Setup
+
+HiveOS → **Flight Sheet** → **Custom Miner** → **Expert Section**
+
+Use the following values:
+
+| Field | Value |
+|------|-------|
+| Miner name | `coded-miner` |
+| Installation URL | `https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz` |
+| Hash algorithm | `----` |
+| Wallet and worker template | `%WAL%-%WORKER_NAME%` |
+| Pool URL | `pool.codedonqubic.com:7777` |
+| Pass | leave empty |
+| Extra config arguments | `{"amountOfThreads":32}` |
+
+### Thread Control in HiveOS
+
 ```json
-{"amountOfThreads":4}
+{"amountOfThreads":32}
 ```
 
-### 4. Thread Control
+| Value | Behavior |
+|------|----------|
+| `1` | 1 thread |
+| `4` | 4 threads |
+| `32` | 32 threads |
+| `0` | all CPUs minus 1 |
 
-| Value | Behavior          |
-|------|------------------|
-| 1    | 1 thread         |
-| 4    | 4 threads        |
-| 0    | all CPUs minus 1 |
+---
 
-### 5. Start Miner
+# 📊 Output Example
 
-```bash
-source /hive/miners/custom/h-config.sh
-miner_config_gen
-bash /hive/miners/custom/h-run.sh
+```
+[ $0.01 CODED ] ... | SOLS: 0/0 | RAWDIFF:16 | THRESH:16 | SCORE:qatum_real | [SCALAR] 2500 it/s
 ```
 
 ---
 
-## 📊 Output Example
+# 📡 Dashboard
 
-```
-[ $0.01 CODED ] ... | SOLS: 0/0 | RAWDIFF:80 | THRESH:80 | S:stub | [AVX512] 590k it/s | 580k avg it/s
-```
-
----
-
-## 📡 Frontend
-
-Workers will appear automatically:
+Workers appear automatically:
 
 - Worker name  
 - Wallet  
-- Status: active  
+- Status  
 - Hashrate  
-```bash
- https://codedonqubic.com/pool
-```
----
 
-## ⚙️ Notes
-
-- CPU only (AVX2 / AVX512 auto-detection)  
-- CUDA not active yet  
-- Score system currently stubbed (`qatum_stub`)  
+👉 https://codedonqubic.com/pool
 
 ---
 
-## 🔒 Security
+# ⚙️ Notes
 
-- This repo contains binary releases only  
-- Source code is private  
-- No private keys are required  
+- CPU mining only (auto-detect AVX2 / AVX512)  
+- Native macOS ARM build (no Docker required)  
+- Docker fallback for all other systems  
+- CUDA backend not active yet  
 
 ---
 
+# 🔒 Security
 
-## 📣 Feedback
+- No private keys required  
+- Wallet is used for identification only  
+- Binary-only release  
+
+---
+
+# 📣 Feedback
 
 This is an early test release.
 
-Report issues or performance feedback.
+Report issues, bugs, or performance results.
