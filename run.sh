@@ -5,7 +5,7 @@ VERSION="${VERSION:-v0.1.0}"
 POOL="${POOL:-pool.codedonqubic.com:7777}"
 WALLET="${WALLET:-}"
 WORKER="${WORKER:-coded-mac}"
-THREADS="${THREADS:-4}"
+THREADS="${THREADS:-0}"
 
 BASE_URL="https://github.com/CodedOnQubic/coded-miner-release/raw/main"
 
@@ -44,7 +44,7 @@ fi
 echo "[CODED] Using Docker amd64 build"
 
 PLATFORM="linux/amd64"
-ARTIFACT="coded-miner-docker-${VERSION}-linux-amd64.tar.gz"
+ARTIFACT="coded-miner-docker-linux-amd64.tar.gz"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[ERROR] Docker not installed. Please install Docker Desktop first."
