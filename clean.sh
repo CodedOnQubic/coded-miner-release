@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+echo "[CODED] killing old processes..."
+pkill -f coded-miner || true
+
 echo "[CODED] CLEAN + REINSTALL START"
 
 MINER_DIR="/hive/miners/custom/coded-miner"
