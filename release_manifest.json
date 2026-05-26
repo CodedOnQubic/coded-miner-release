@@ -1,0 +1,10 @@
+{
+  "version": "v0.7.14-m1099w5k-release-write-alias-202605261218",
+  "target": "hive-linux-amd64-avx512",
+  "repo": "CodedOnQubic/coded-miner",
+  "branch": "main",
+  "commit": "7511573a03f6f8b6f2af97f05f59588819511d8f",
+  "built_at": "2026-05-26T12:18:37Z",
+  "builder_rig_id": "Rig2X3D",
+  "marker": "M10.99W5B_RELEASE_BUILDER_ROUTES"
+}
