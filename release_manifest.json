@@ -1,10 +1,10 @@
 {
-  "version": "v0.7.15-m1099w5l-github-release-202605261223",
+  "version": "v0.7.16-m1099w5l-github-release-202605261238",
   "target": "hive-linux-amd64-avx512",
   "repo": "CodedOnQubic/coded-miner",
   "branch": "main",
   "commit": "1e6be99a0508f704569240650a68fb1339330ddf",
-  "built_at": "2026-05-26T12:23:39Z",
+  "built_at": "2026-05-26T12:39:03Z",
   "builder_rig_id": "Rig2X3D",
   "marker": "M10.99W5B_RELEASE_BUILDER_ROUTES"
 }
