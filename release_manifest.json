@@ -1,10 +1,10 @@
 {
-  "version": "v0.7.2-m1099w4-20260527103548",
+  "version": "v0.7.2-m1099w4-20260527110756",
   "target": "hive-linux-amd64-avx512",
   "repo": "CodedOnQubic/coded-miner",
   "branch": "main",
-  "commit": "a6a75bd7b3e2c61cfa4c9649c6276b8c686031d3",
-  "built_at": "2026-05-27T10:35:53Z",
+  "commit": "f0c30977baf42173689ec50ec4108c140344944d",
+  "built_at": "2026-05-27T11:08:00Z",
   "builder_rig_id": "Rig2X3D",
   "marker": "M10.99W4_FORCE_RELEASE_COMMAND_FIRST"
 }
