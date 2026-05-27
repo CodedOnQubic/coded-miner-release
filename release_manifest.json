@@ -1,10 +1,10 @@
 {
-  "version": "v0.7.40-e2e-release-20260527161811",
+  "version": "v0.7.41-m1099z68-hive-self-extract-20260527165149",
   "target": "hive-linux-amd64-avx512",
   "repo": "CodedOnQubic/coded-miner",
   "branch": "main",
   "commit": "c024811e5b911d7b5b74b8d0654527307ab2b20f",
-  "built_at": "2026-05-27T16:28:22Z",
+  "built_at": "2026-05-27T17:00:35Z",
   "builder_rig_id": "Rig2X3D",
   "marker": "M10.99W5B_RELEASE_BUILDER_ROUTES"
 }
