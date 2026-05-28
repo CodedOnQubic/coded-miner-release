@@ -1,10 +1,10 @@
 {
-  "version": "v0.7.44-m1099z76-live-dashboard-20260528075246",
+  "version": "v0.7.45-m1099z77-hard-builder-reset-20260528075545",
   "target": "hive-linux-amd64-avx512",
   "repo": "CodedOnQubic/coded-miner",
   "branch": "main",
   "commit": "c024811e5b911d7b5b74b8d0654527307ab2b20f",
-  "built_at": "2026-05-28T07:53:07Z",
+  "built_at": "2026-05-28T07:56:20Z",
   "builder_rig_id": "Rig2X3D",
   "marker": "M10.99W5B_RELEASE_BUILDER_ROUTES"
 }
