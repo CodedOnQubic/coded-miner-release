@@ -1,10 +1,10 @@
 {
-  "version": "v0.7.51-m1099z96-hrun-sync-25da739-20260528120948",
+  "version": "v0.7.52-m1099z101-lifecycle-safe-25da739-20260528124310",
   "target": "hive-linux-amd64-avx512",
   "repo": "CodedOnQubic/coded-miner",
   "branch": "main",
   "commit": "25da739b815110b9a1cb3667922eda126b2b2f74",
-  "built_at": "2026-05-28T12:10:01Z",
+  "built_at": "2026-05-28T12:46:10Z",
   "builder_rig_id": "Rig2X3D",
   "marker": "M10.99W5B_RELEASE_BUILDER_ROUTES"
 }
