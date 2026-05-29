@@ -1,0 +1,10 @@
+{
+  "version": "v0.7.56-m1099z126-z127-canonical-default-9706647-20260529T001051Z",
+  "target": "hive-linux-amd64-avx512",
+  "repo": "CodedOnQubic/coded-miner",
+  "branch": "main",
+  "commit": "9706647180e715e37e2fed389ce2e5d3047f9887",
+  "built_at": "2026-05-29T00:11:30Z",
+  "builder_rig_id": "Rig2X3D",
+  "marker": "M10.99W5B_RELEASE_BUILDER_ROUTES"
+}
