@@ -62,9 +62,9 @@ CODED_HI_METRICS_CACHE="${CODED_HI_METRICS_CACHE:-/tmp/coded-miner-${WORKER}.hi.
 
 CODED_VERBOSE_HI="${CODED_VERBOSE_HI:-0}"
 
-# M10.99Z209_QUIET_CONSOLE_KEEP_FULL_RUNTIME_LOG
-# Keep the full miner output in CODED_RUNTIME_LOG for analytics parsing,
-# but hide high-frequency HI_TIMING spam from the public terminal by default.
+# M10.99Z211_CLEAN_USER_CONSOLE_WHITELIST
+# Runtime log keeps full miner output for analytics.
+# Terminal output is intentionally clean for public Mac users.
 coded_console_filter() {
   if [ "${CODED_VERBOSE_HI:-0}" = "1" ]; then
     cat
@@ -72,11 +72,41 @@ coded_console_filter() {
   fi
 
   awk '
-    /\[HI_TIMING\]/ { next }
-    /\[HI_TIMING_SUMMARY\]/ { next }
-    { print; fflush(); }
+    /^\[CODED\]/ { print; fflush(); next }
+    /^CODED Miner starting/ { print; fflush(); next }
+    /^\[CODED_RUNTIME_CONTRACT\]/ { print; fflush(); next }
+    /^=+$/ { print; fflush(); next }
+    /^[[:space:]]*$/ { next }
+
+    /^\[RUNTIME\]/ { print; fflush(); next }
+    /^\[WARN\]/ { print; fflush(); next }
+    /^\[ERROR\]/ { print; fflush(); next }
+    /^\[POOL_Z207C_TOLERANT_PACKET_HANDLED\]/ { next }
+    /^\[POOL_/ { next }
+
+    /^\[ \$0\.01 CODED \]/ { print; fflush(); next }
+
+    # Drop all noisy profiling fragments, including broken/partial HI_TIMING lines.
+    /HI_TIMING/ { next }
+    /global_count=/ { next }
+    /local_count=/ { next }
+    /local_avg_ms=/ { next }
+    /algo0_count=/ { next }
+    /algo0_avg_ms=/ { next }
+    /algo0_max_ms=/ { next }
+    /algo1_count=/ { next }
+    /score=0 algo=/ { next }
+    /^0(\.[0-9]+)?[[:space:]]+local_avg_ms=/ { next }
+    /^local_count=/ { next }
+    /^score=0 algo=/ { next }
+    /^algo=0$/ { next }
+    /^0$/ { next }
+
+    # Hide everything else by default.
+    { next }
   '
 }
+
 
 # M10.99Z208_HI_TIMING_METRICS_FALLBACK
 compute_hi_timing_its() {
