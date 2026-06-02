@@ -65,6 +65,11 @@ start_external_fleet_heartbeat() {
     return 0
   fi
 
+  if [ "${CODED_FLEET_HEARTBEAT_STARTED:-0}" = "1" ]; then
+    return 0
+  fi
+  export CODED_FLEET_HEARTBEAT_STARTED=1
+
   DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-${CODED_PLATFORM:-unknown}:${WORKER}}}"
 
   echo "[CODED] Fleet heartbeat: $API_URL/fleet/devices/heartbeat device=$DEVICE_ID"
