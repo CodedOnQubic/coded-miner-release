@@ -223,6 +223,96 @@ parse_last_its() {
   compute_hi_timing_its
 }
 
+
+# M10.99Z212C_PARSE_FULLPATH_QUALITY_TELEMETRY
+parse_quality_metric() {
+  local key="$1"
+  if [ ! -f "$CODED_RUNTIME_LOG" ]; then
+    echo null
+    return 0
+  fi
+
+  # Prefer FAST_SHADOW_SUMMARY because it is the aggregate pass-state line.
+  local value
+  value="$(tail -n 800 "$CODED_RUNTIME_LOG" \
+    | grep 'FAST_SHADOW_SUMMARY' \
+    | grep -Eo "${key}=[0-9.]+" \
+    | tail -1 \
+    | cut -d= -f2 || true)"
+
+  if [ -z "$value" ]; then
+    value="$(tail -n 800 "$CODED_RUNTIME_LOG" \
+      | grep -Eo "${key}=[0-9.]+" \
+      | tail -1 \
+      | cut -d= -f2 || true)"
+  fi
+
+  if [ -z "$value" ]; then
+    echo null
+    return 0
+  fi
+
+  case "$key" in
+    pass_rate)
+      # Logs can be interleaved with HI_TIMING global_count fragments.
+      # Accept only sane percentages. Otherwise calculate from total_pass/total_seen.
+      awk -v v="$value" 'BEGIN { if (v >= 0 && v <= 100) print v; else print "null"; }'
+      ;;
+    *)
+      echo "$value"
+      ;;
+  esac
+}
+
+parse_total_seen() {
+  parse_quality_metric total_seen
+}
+
+parse_total_pass() {
+  parse_quality_metric total_pass
+}
+
+parse_total_skip() {
+  parse_quality_metric total_skip
+}
+
+parse_false_negative() {
+  local v
+  v="$(parse_quality_metric false_negative)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
+parse_max_real_score_passed() {
+  local v
+  v="$(parse_quality_metric max_real_score_passed)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
+parse_max_real_score_audited_skip() {
+  local v
+  v="$(parse_quality_metric max_real_score_audited_skip)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
+parse_pass_rate() {
+  local v seen pass
+  v="$(parse_quality_metric pass_rate)"
+  if [ "$v" != "null" ]; then
+    echo "$v"
+    return 0
+  fi
+
+  seen="$(parse_total_seen)"
+  pass="$(parse_total_pass)"
+
+  if [ "$seen" = "null" ] || [ "$pass" = "null" ] || [ "$seen" = "0" ]; then
+    echo null
+    return 0
+  fi
+
+  awk -v p="$pass" -v s="$seen" 'BEGIN { printf "%.6f", (p / s) * 100.0 }'
+}
+
 parse_avg_its() {
   if [ ! -f "$CODED_RUNTIME_LOG" ]; then
     echo 0
@@ -300,6 +390,13 @@ start_external_fleet_heartbeat() {
           \"runtime_state\":\"$(parse_runtime_state)\",
           \"last_its\":$(parse_last_its),
           \"avg_its\":$(parse_avg_its),
+          \"total_seen\":$(parse_total_seen),
+          \"total_pass\":$(parse_total_pass),
+          \"total_skip\":$(parse_total_skip),
+          \"pass_rate\":$(parse_pass_rate),
+          \"false_negative\":$(parse_false_negative),
+          \"max_real_score_passed\":$(parse_max_real_score_passed),
+          \"max_real_score_audited_skip\":$(parse_max_real_score_audited_skip),
           \"started_at\":\"$CODED_STARTED_AT\",
           \"capabilities\":{
             \"scalar\":true,
