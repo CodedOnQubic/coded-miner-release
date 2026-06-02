@@ -1,1 +1,1 @@
-coded-miner-macos-arm64-v0.7.64-m1099z216b-mac-arm-shadow-score.tar.gz
+coded-miner-macos-arm64-v0.7.65-m1099z218b2-effective-real-audit.tar.gz
