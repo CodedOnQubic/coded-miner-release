@@ -415,6 +415,13 @@ parse_max_real_score_seen() {
   [ "$v" = "null" ] && echo 0 || echo "$v"
 }
 
+# M10.99Z219D_PARSE_REAL_SCORE_AVAILABLE
+parse_real_score_available() {
+  local v
+  v="$(parse_quality_metric real_score_available)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
 parse_total_audited() {
   local v
   v="$(parse_quality_metric total_audited)"
@@ -607,6 +614,7 @@ start_external_fleet_heartbeat() {
           \"total_audited\":$(parse_total_audited),
           \"audit_rate\":$(parse_audit_rate),
           \"max_real_score_seen\":$(parse_max_real_score_seen),
+          \"real_score_available\":$(parse_real_score_available),
           \"max_real_score_passed\":$(parse_max_real_score_passed),
           \"max_real_score_audited_skip\":$(parse_max_real_score_audited_skip),
           \"max_shadow_score_seen\":$(parse_max_shadow_score_seen),
