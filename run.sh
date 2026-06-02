@@ -83,6 +83,51 @@ export CODED_RELEASE_BASE_URL="${CODED_RELEASE_BASE_URL:-https://raw.githubuserc
 export CODED_LATEST_MACOS_ARM64_URL="${CODED_LATEST_MACOS_ARM64_URL:-$CODED_RELEASE_BASE_URL/latest-macos-arm64.txt}"
 export CODED_CURRENT_RELEASE_FILE="${CODED_CURRENT_RELEASE_FILE:-}"
 
+# M10.99Z217B_OUTER_SUPERVISOR_LOOP
+# Parent process for public Mac fleet join.
+# Keeps foreign Macs alive and auto-updated without manual restart.
+if [ "${CODED_SUPERVISOR_CHILD:-0}" != "1" ] && [ "${CODED_SELF_UPDATE_SUPERVISOR:-1}" = "1" ]; then
+  export CODED_SELF_UPDATE_SUPERVISOR=1
+
+  cleanup_supervisor() {
+    if [ -n "${CODED_CHILD_PID:-}" ]; then
+      kill -TERM "$CODED_CHILD_PID" 2>/dev/null || true
+      sleep 1
+      kill -KILL "$CODED_CHILD_PID" 2>/dev/null || true
+    fi
+    exit 0
+  }
+
+  trap cleanup_supervisor INT TERM
+
+  echo "[CODED] Fleet supervisor active: worker=${WORKER:-unknown} update_sec=${CODED_SELF_UPDATE_SEC:-60}"
+
+  while true; do
+    TMP_RUN="/tmp/coded-run-${WORKER:-worker}.sh"
+
+    curl -fsSL "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?supervisor=$(date +%s)" \
+      -o "$TMP_RUN" || {
+        echo "[CODED] Supervisor: failed to fetch latest run.sh, retrying..."
+        sleep "${CODED_SELF_UPDATE_SEC:-60}"
+        continue
+      }
+
+    chmod +x "$TMP_RUN"
+
+    CODED_SUPERVISOR_CHILD=1 \
+    CODED_SELF_UPDATE_SUPERVISOR=0 \
+    bash "$TMP_RUN" &
+    CODED_CHILD_PID="$!"
+
+    wait "$CODED_CHILD_PID" || true
+    CODED_CHILD_PID=""
+
+    echo "[CODED] Supervisor: miner child exited, refreshing latest release..."
+    sleep 3
+  done
+fi
+
+
 
 # M10.99Z211_CLEAN_USER_CONSOLE_WHITELIST
 # Runtime log keeps full miner output for analytics.
