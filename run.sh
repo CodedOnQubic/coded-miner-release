@@ -34,7 +34,7 @@ export CODED_RUNTIME_MODE="${CODED_RUNTIME_MODE:-default_analytics}"
 export CODED_COMMAND_MODE="${CODED_COMMAND_MODE:-poll}"
 export CODED_DEVICE_ROLE="${CODED_DEVICE_ROLE:-default_analytics}"
 export CODED_EXPERIMENT_READY="${CODED_EXPERIMENT_READY:-YES}"
-export CODED_RELEASE_BUILD_READY="${CODED_RELEASE_BUILD_READY:-YES}"
+export CODED_RELEASE_BUILD_READY="YES"
 export CODED_CAPABILITIES_UPLOAD="${CODED_CAPABILITIES_UPLOAD:-YES}"
 export CODED_THREADS="${CODED_THREADS:-$THREADS}"
 export COMMAND_THREADS="${COMMAND_THREADS:-$THREADS}"
@@ -52,6 +52,61 @@ ARCH="$(uname -m)"
 
 # M10.99Z203A_EXTERNAL_FLEET_HEARTBEAT
 API_URL="${API_URL:-https://api.codedonqubic.com}"
+
+# M10.99Z204_EXTERNAL_ANALYTICS_AGENT
+CODED_STARTED_AT="${CODED_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+CODED_RUNTIME_LOG="${CODED_RUNTIME_LOG:-/tmp/coded-miner-${WORKER}.log}"
+: > "$CODED_RUNTIME_LOG"
+
+parse_runtime_state() {
+  if [ ! -f "$CODED_RUNTIME_LOG" ]; then
+    echo "starting"
+    return 0
+  fi
+
+  if tail -n 80 "$CODED_RUNTIME_LOG" | grep -q "mining active"; then
+    echo "mining_active"
+    return 0
+  fi
+
+  if tail -n 80 "$CODED_RUNTIME_LOG" | grep -q "WAITING FOR NEW SEED\|waiting for new seed"; then
+    echo "waiting_for_seed"
+    return 0
+  fi
+
+  if tail -n 80 "$CODED_RUNTIME_LOG" | grep -q "Pool client not connected\|Reconnecting"; then
+    echo "reconnecting"
+    return 0
+  fi
+
+  echo "running"
+}
+
+parse_last_its() {
+  if [ ! -f "$CODED_RUNTIME_LOG" ]; then
+    echo 0
+    return 0
+  fi
+
+  tail -n 80 "$CODED_RUNTIME_LOG" \
+    | grep -Eo '\[[A-Za-z0-9_-]+\] [0-9.,]+ it/s' \
+    | tail -1 \
+    | awk '{print $(NF-1)}' \
+    | tr -d ',.' || echo 0
+}
+
+parse_avg_its() {
+  if [ ! -f "$CODED_RUNTIME_LOG" ]; then
+    echo 0
+    return 0
+  fi
+
+  tail -n 80 "$CODED_RUNTIME_LOG" \
+    | grep -Eo '[0-9.,]+ avg it/s' \
+    | tail -1 \
+    | awk '{print $1}' \
+    | tr -d ',.' || echo 0
+}
 
 coded_json_bool() {
   case "$1" in
@@ -165,7 +220,7 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
   export CODED_KERNEL_BACKEND="${CODED_KERNEL_BACKEND:-scalar}"
   export CODED_RELEASE_BUILD_READY="YES"
   export CODED_EXPERIMENT_READY="${CODED_EXPERIMENT_READY:-YES}"
-  export CODED_RELEASE_BUILD_READY="${CODED_RELEASE_BUILD_READY:-YES}"
+  export CODED_RELEASE_BUILD_READY="YES"
   start_external_fleet_heartbeat
 
   start_external_fleet_heartbeat
@@ -198,11 +253,12 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
   CODED_EXPERIMENT_READY="$CODED_EXPERIMENT_READY" \
   CODED_RELEASE_BUILD_READY="$CODED_RELEASE_BUILD_READY" \
   CODED_CAPABILITIES_UPLOAD="$CODED_CAPABILITIES_UPLOAD" \
-  exec "$WORKDIR/coded-miner" \
+  "$WORKDIR/coded-miner" \
     --pool "$POOL" \
     --wallet "$WALLET" \
     --worker "$WORKER" \
-    --threads "$THREADS"
+    --threads "$THREADS" 2>&1 | tee -a "$CODED_RUNTIME_LOG"
+  exit ${PIPESTATUS[0]}
 fi
 
 start_external_fleet_heartbeat
