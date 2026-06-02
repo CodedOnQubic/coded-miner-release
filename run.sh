@@ -47,7 +47,9 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
   echo "[CODED] Using native macOS ARM build"
 
   WORKDIR="/tmp/coded-miner-macos-arm64"
-  ARTIFACT="coded-miner-macos-arm64.tar.gz"
+  # M10.99Z201_VERSIONED_MACOS_ARM_ARTIFACT
+  # Prefer a versioned artifact name to avoid GitHub Raw/CDN stale binary cache.
+  ARTIFACT="$(curl -fsSL "$BASE_URL/latest-macos-arm64.txt" 2>/dev/null || echo coded-miner-macos-arm64.tar.gz)"
 
   rm -rf "$WORKDIR"
   mkdir -p "$WORKDIR"
