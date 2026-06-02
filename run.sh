@@ -194,7 +194,7 @@ parse_runtime_state() {
     return 0
   fi
 
-  if [ "$(parse_last_its)" != "0" ] || [ "$(parse_avg_its)" != "0" ]; then
+  if [ "$(parse_status_last_its)" != "0" ] || [ "$(parse_status_avg_its)" != "0" ]; then
     echo "mining_active"
     return 0
   fi
@@ -202,25 +202,73 @@ parse_runtime_state() {
   echo "running"
 }
 
-parse_last_its() {
+
+# M10.99Z212D_STABLE_STATUS_ITS_ONLY
+# Public fleet speed must come from complete miner status lines, not HI_TIMING global_count.
+# HI_TIMING can count internal scoring calls and can be interleaved, causing impossible 50M+ spikes.
+parse_status_last_its() {
   if [ ! -f "$CODED_RUNTIME_LOG" ]; then
     echo 0
     return 0
   fi
 
   local value
-  value="$(tail -n 200 "$CODED_RUNTIME_LOG" \
+  value="$(tail -n 500 "$CODED_RUNTIME_LOG" \
+    | grep 'SOLS:' \
     | grep -Eo '\[[A-Za-z0-9_-]+\] [0-9.,]+ it/s' \
     | tail -1 \
     | awk '{print $(NF-1)}' \
     | tr -d ',.' || true)"
 
-  if [ -n "$value" ] && [ "$value" != "000" ]; then
-    echo "$value"
+  if [ -z "$value" ]; then
+    echo 0
     return 0
   fi
 
-  compute_hi_timing_its
+  echo "$value"
+}
+
+parse_status_avg_its() {
+  if [ ! -f "$CODED_RUNTIME_LOG" ]; then
+    echo 0
+    return 0
+  fi
+
+  local value
+  value="$(tail -n 500 "$CODED_RUNTIME_LOG" \
+    | grep 'SOLS:' \
+    | grep -Eo '[0-9.,]+ avg it/s' \
+    | tail -1 \
+    | awk '{print $1}' \
+    | tr -d ',.' || true)"
+
+  if [ -z "$value" ]; then
+    echo 0
+    return 0
+  fi
+
+  echo "$value"
+}
+
+sanitize_public_its() {
+  local v="$1"
+  local max="${CODED_MAX_PUBLIC_ITS:-12000000}"
+
+  if [ -z "$v" ] || [ "$v" = "null" ]; then
+    echo 0
+    return 0
+  fi
+
+  awk -v v="$v" -v max="$max" 'BEGIN {
+    if (v < 0 || v > max) print 0;
+    else printf "%.0f", v;
+  }'
+}
+
+parse_last_its() {
+  local v
+  v="$(parse_status_last_its)"
+  sanitize_public_its "$v"
 }
 
 
@@ -233,19 +281,13 @@ parse_quality_metric() {
   fi
 
   # Prefer FAST_SHADOW_SUMMARY because it is the aggregate pass-state line.
+  # Avoid generic fallback for pass_rate because HI_TIMING interleaving can corrupt nearby text.
   local value
-  value="$(tail -n 800 "$CODED_RUNTIME_LOG" \
+  value="$(tail -n 1500 "$CODED_RUNTIME_LOG" \
     | grep 'FAST_SHADOW_SUMMARY' \
     | grep -Eo "${key}=[0-9.]+" \
     | tail -1 \
     | cut -d= -f2 || true)"
-
-  if [ -z "$value" ]; then
-    value="$(tail -n 800 "$CODED_RUNTIME_LOG" \
-      | grep -Eo "${key}=[0-9.]+" \
-      | tail -1 \
-      | cut -d= -f2 || true)"
-  fi
 
   if [ -z "$value" ]; then
     echo null
@@ -314,29 +356,9 @@ parse_pass_rate() {
 }
 
 parse_avg_its() {
-  if [ ! -f "$CODED_RUNTIME_LOG" ]; then
-    echo 0
-    return 0
-  fi
-
-  local value
-  value="$(tail -n 200 "$CODED_RUNTIME_LOG" \
-    | grep -Eo '[0-9.,]+ avg it/s' \
-    | tail -1 \
-    | awk '{print $1}' \
-    | tr -d ',.' || true)"
-
-  if [ -n "$value" ] && [ "$value" != "000" ]; then
-    echo "$value"
-    return 0
-  fi
-
-  if [ -f "$CODED_HI_METRICS_CACHE" ]; then
-    cat "$CODED_HI_METRICS_CACHE"
-    return 0
-  fi
-
-  compute_hi_timing_its
+  local v
+  v="$(parse_status_avg_its)"
+  sanitize_public_its "$v"
 }
 
 effective_threads_for_heartbeat() {
