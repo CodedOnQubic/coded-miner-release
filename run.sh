@@ -357,7 +357,7 @@ parse_max_real_score_passed() {
 
 parse_max_real_score_audited_skip() {
   local v
-  v="$(parse_quality_metric max_real_score_audited_skip)"
+  v="$(parse_quality_metric max_real_score_audited_skip|max_shadow_score_seen|max_shadow_score_passed)"
   [ "$v" = "null" ] && echo 0 || echo "$v"
 }
 
