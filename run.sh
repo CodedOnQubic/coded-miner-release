@@ -53,10 +53,17 @@ ARCH="$(uname -m)"
 # M10.99Z203A_EXTERNAL_FLEET_HEARTBEAT
 API_URL="${API_URL:-https://api.codedonqubic.com}"
 
-# M10.99Z204_EXTERNAL_ANALYTICS_AGENT
+# M10.99Z204B_CANONICAL_EXTERNAL_ANALYTICS_HEARTBEAT
 CODED_STARTED_AT="${CODED_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 CODED_RUNTIME_LOG="${CODED_RUNTIME_LOG:-/tmp/coded-miner-${WORKER}.log}"
 : > "$CODED_RUNTIME_LOG"
+
+coded_json_bool() {
+  case "$1" in
+    YES|yes|true|TRUE|1|ON|on) echo true ;;
+    *) echo false ;;
+  esac
+}
 
 parse_runtime_state() {
   if [ ! -f "$CODED_RUNTIME_LOG" ]; then
@@ -64,17 +71,17 @@ parse_runtime_state() {
     return 0
   fi
 
-  if tail -n 80 "$CODED_RUNTIME_LOG" | grep -q "mining active"; then
+  if tail -n 120 "$CODED_RUNTIME_LOG" | grep -q "mining active"; then
     echo "mining_active"
     return 0
   fi
 
-  if tail -n 80 "$CODED_RUNTIME_LOG" | grep -q "WAITING FOR NEW SEED\|waiting for new seed"; then
+  if tail -n 120 "$CODED_RUNTIME_LOG" | grep -q "WAITING FOR NEW SEED\|waiting for new seed\|waiting for first job"; then
     echo "waiting_for_seed"
     return 0
   fi
 
-  if tail -n 80 "$CODED_RUNTIME_LOG" | grep -q "Pool client not connected\|Reconnecting"; then
+  if tail -n 120 "$CODED_RUNTIME_LOG" | grep -q "Pool client not connected\|Reconnecting"; then
     echo "reconnecting"
     return 0
   fi
@@ -88,11 +95,14 @@ parse_last_its() {
     return 0
   fi
 
-  tail -n 80 "$CODED_RUNTIME_LOG" \
+  local value
+  value="$(tail -n 120 "$CODED_RUNTIME_LOG" \
     | grep -Eo '\[[A-Za-z0-9_-]+\] [0-9.,]+ it/s' \
     | tail -1 \
     | awk '{print $(NF-1)}' \
-    | tr -d ',.' || echo 0
+    | tr -d ',.' || true)"
+
+  if [ -z "$value" ]; then echo 0; else echo "$value"; fi
 }
 
 parse_avg_its() {
@@ -101,18 +111,28 @@ parse_avg_its() {
     return 0
   fi
 
-  tail -n 80 "$CODED_RUNTIME_LOG" \
+  local value
+  value="$(tail -n 120 "$CODED_RUNTIME_LOG" \
     | grep -Eo '[0-9.,]+ avg it/s' \
     | tail -1 \
     | awk '{print $1}' \
-    | tr -d ',.' || echo 0
+    | tr -d ',.' || true)"
+
+  if [ -z "$value" ]; then echo 0; else echo "$value"; fi
 }
 
-coded_json_bool() {
-  case "$1" in
-    YES|yes|true|TRUE|1|ON|on) echo true ;;
-    *) echo false ;;
-  esac
+effective_threads_for_heartbeat() {
+  if [ "${THREADS:-0}" != "0" ]; then
+    echo "$THREADS"
+    return 0
+  fi
+
+  if [ "$OS" = "Darwin" ]; then
+    sysctl -n hw.ncpu 2>/dev/null || echo 0
+    return 0
+  fi
+
+  nproc 2>/dev/null || echo 0
 }
 
 start_external_fleet_heartbeat() {
@@ -146,65 +166,20 @@ start_external_fleet_heartbeat() {
           \"fullscore\":$(coded_json_bool "${CODED_FORCE_FULLSCORE:-1}"),
           \"CODED_FORCE_FULLSCORE\":\"${CODED_FORCE_FULLSCORE:-1}\",
           \"CODED_FULLSCORE_ALL_BACKENDS\":\"${CODED_FULLSCORE_ALL_BACKENDS:-1}\",
-          \"threads\":${THREADS:-0},
-          \"experiment_ready\":$(coded_json_bool "${CODED_EXPERIMENT_READY:-YES}"),
-          \"release_build_ready\":$(coded_json_bool "${CODED_RELEASE_BUILD_READY:-NO}"),
-          \"capabilities\":{
-            \"scalar\":true,
-            \"macos_arm64\":$([ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ] && echo true || echo false),
-            \"docker\":$([ "${CODED_PLATFORM:-}" = "docker-linux-amd64" ] && echo true || echo false)
-          }
-        }" >/dev/null 2>&1 || true
-
-      sleep "${CODED_FLEET_HEARTBEAT_SEC:-30}"
-    done
-  ) &
-}
-
-
-# M10.99Z203A_EXTERNAL_FLEET_HEARTBEAT_FORCE
-API_URL="${API_URL:-https://api.codedonqubic.com}"
-
-coded_json_bool() {
-  case "$1" in
-    YES|yes|true|TRUE|1|ON|on) echo true ;;
-    *) echo false ;;
-  esac
-}
-
-start_external_fleet_heartbeat() {
-  if [ "${CODED_FLEET_JOIN:-YES}" != "YES" ]; then
-    return 0
-  fi
-
-  DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-${CODED_PLATFORM:-unknown}:${WORKER}}}"
-
-  echo "[CODED] Fleet heartbeat: $API_URL/fleet/devices/heartbeat device=$DEVICE_ID"
-
-  (
-    while true; do
-      curl -fsS -X POST "$API_URL/fleet/devices/heartbeat" \
-        -H "Content-Type: application/json" \
-        -d "{
-          \"device_id\":\"$DEVICE_ID\",
-          \"worker_name\":\"$WORKER\",
-          \"wallet\":\"$WALLET\",
-          \"platform\":\"${CODED_PLATFORM:-unknown}\",
-          \"os\":\"$OS\",
-          \"arch\":\"$ARCH\",
-          \"backend\":\"${CODED_KERNEL_BACKEND:-auto}\",
-          \"runtime_mode\":\"${CODED_RUNTIME_MODE:-default_analytics}\",
-          \"device_role\":\"${CODED_DEVICE_ROLE:-default_analytics}\",
-          \"fullscore\":$(coded_json_bool "${CODED_FORCE_FULLSCORE:-1}"),
-          \"CODED_FORCE_FULLSCORE\":\"${CODED_FORCE_FULLSCORE:-1}\",
-          \"CODED_FULLSCORE_ALL_BACKENDS\":\"${CODED_FULLSCORE_ALL_BACKENDS:-1}\",
-          \"threads\":${THREADS:-0},
+          \"threads\":$(effective_threads_for_heartbeat),
           \"experiment_ready\":$(coded_json_bool "${CODED_EXPERIMENT_READY:-YES}"),
           \"release_build_ready\":$(coded_json_bool "${CODED_RELEASE_BUILD_READY:-YES}"),
+          \"runtime_state\":\"$(parse_runtime_state)\",
+          \"last_its\":$(parse_last_its),
+          \"avg_its\":$(parse_avg_its),
+          \"started_at\":\"$CODED_STARTED_AT\",
           \"capabilities\":{
             \"scalar\":true,
             \"macos_arm64\":$([ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ] && echo true || echo false),
-            \"docker\":$([ "${CODED_PLATFORM:-}" = "docker-linux-amd64" ] && echo true || echo false)
+            \"docker\":$([ "${CODED_PLATFORM:-}" = "docker-linux-amd64" ] && echo true || echo false),
+            \"build_macos_arm64\":$([ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ] && echo true || echo false),
+            \"run_experiment\":true,
+            \"default_analytics\":true
           }
         }" >/dev/null 2>&1 || true
 
@@ -221,8 +196,6 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
   export CODED_RELEASE_BUILD_READY="YES"
   export CODED_EXPERIMENT_READY="${CODED_EXPERIMENT_READY:-YES}"
   export CODED_RELEASE_BUILD_READY="YES"
-  start_external_fleet_heartbeat
-
   start_external_fleet_heartbeat
   echo "[CODED] Using native macOS ARM build"
 
