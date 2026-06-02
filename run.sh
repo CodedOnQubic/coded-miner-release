@@ -357,17 +357,44 @@ parse_max_real_score_passed() {
 
 parse_max_real_score_audited_skip() {
   local v
-  v="$(parse_quality_metric max_real_score_audited_skip|max_shadow_score_seen|max_shadow_score_passed)"
+  v="$(parse_quality_metric max_real_score_audited_skip)"
   [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
+
+# M10.99Z216D_DIRECT_SHADOW_SCORE_PARSER
+parse_shadow_score_metric() {
+  local key="$1"
+  local value
+
+  if [ ! -f "$CODED_RUNTIME_LOG" ]; then
+    echo 0
+    return 0
+  fi
+
+  value="$(
+    tail -n 300 "$CODED_RUNTIME_LOG" \
+      | grep 'FAST_SHADOW_SUMMARY' \
+      | grep -E 'total_seen=[1-9][0-9]*' \
+      | grep -Eo "${key}=[0-9]+" \
+      | tail -1 \
+      | cut -d= -f2 || true
+  )"
+
+  if [ -z "$value" ]; then
+    echo 0
+  else
+    echo "$value"
+  fi
 }
 
 # M10.99Z216B_PARSE_SHADOW_SCORE_TELEMETRY
 parse_max_shadow_score_seen() {
-  parse_quality_metric max_shadow_score_seen
+  parse_shadow_score_metric max_shadow_score_seen
 }
 
 parse_max_shadow_score_passed() {
-  parse_quality_metric max_shadow_score_passed
+  parse_shadow_score_metric max_shadow_score_passed
 }
 
 parse_pass_rate() {
