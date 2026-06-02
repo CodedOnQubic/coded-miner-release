@@ -361,6 +361,15 @@ parse_max_real_score_audited_skip() {
   [ "$v" = "null" ] && echo 0 || echo "$v"
 }
 
+# M10.99Z216B_PARSE_SHADOW_SCORE_TELEMETRY
+parse_max_shadow_score_seen() {
+  parse_quality_metric max_shadow_score_seen
+}
+
+parse_max_shadow_score_passed() {
+  parse_quality_metric max_shadow_score_passed
+}
+
 parse_pass_rate() {
   local v seen pass
   v="$(parse_quality_metric pass_rate)"
@@ -444,6 +453,8 @@ start_external_fleet_heartbeat() {
           \"false_negative\":$(parse_false_negative),
           \"max_real_score_passed\":$(parse_max_real_score_passed),
           \"max_real_score_audited_skip\":$(parse_max_real_score_audited_skip),
+          \"max_shadow_score_seen\":$(parse_max_shadow_score_seen),
+          \"max_shadow_score_passed\":$(parse_max_shadow_score_passed),
           \"started_at\":\"$CODED_STARTED_AT\",
           \"capabilities\":{
             \"scalar\":true,
