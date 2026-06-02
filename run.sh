@@ -57,6 +57,58 @@ API_URL="${API_URL:-https://api.codedonqubic.com}"
 CODED_STARTED_AT="${CODED_STARTED_AT:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 CODED_RUNTIME_LOG="${CODED_RUNTIME_LOG:-/tmp/coded-miner-${WORKER}.log}"
 : > "$CODED_RUNTIME_LOG"
+CODED_HI_METRICS_STATE="${CODED_HI_METRICS_STATE:-/tmp/coded-miner-${WORKER}.hi.state}"
+CODED_HI_METRICS_CACHE="${CODED_HI_METRICS_CACHE:-/tmp/coded-miner-${WORKER}.hi.cache}"
+
+# M10.99Z208_HI_TIMING_METRICS_FALLBACK
+compute_hi_timing_its() {
+  if [ ! -f "$CODED_RUNTIME_LOG" ]; then
+    echo 0
+    return 0
+  fi
+
+  local total
+  total="$(tail -n 300 "$CODED_RUNTIME_LOG" | grep -Eo 'global_count=[0-9]+' | tail -1 | cut -d= -f2 || true)"
+  if [ -z "$total" ]; then
+    total="$(tail -n 300 "$CODED_RUNTIME_LOG" | grep -Eo 'total=[0-9]+' | tail -1 | cut -d= -f2 || true)"
+  fi
+
+  if [ -z "$total" ]; then
+    echo 0
+    return 0
+  fi
+
+  local now prev_t prev_total rate
+  now="$(date +%s)"
+
+  if [ -f "$CODED_HI_METRICS_STATE" ]; then
+    read -r prev_t prev_total < "$CODED_HI_METRICS_STATE" || true
+  fi
+
+  echo "$now $total" > "$CODED_HI_METRICS_STATE"
+
+  if [ -z "${prev_t:-}" ] || [ -z "${prev_total:-}" ]; then
+    echo 0
+    return 0
+  fi
+
+  local dt=$((now - prev_t))
+  local dc=$((total - prev_total))
+
+  if [ "$dt" -le 0 ] || [ "$dc" -le 0 ]; then
+    if [ -f "$CODED_HI_METRICS_CACHE" ]; then
+      cat "$CODED_HI_METRICS_CACHE"
+    else
+      echo 0
+    fi
+    return 0
+  fi
+
+  rate=$((dc / dt))
+  echo "$rate" > "$CODED_HI_METRICS_CACHE"
+  echo "$rate"
+}
+
 
 coded_json_bool() {
   case "$1" in
@@ -86,6 +138,11 @@ parse_runtime_state() {
     return 0
   fi
 
+  if [ "$(parse_last_its)" != "0" ] || [ "$(parse_avg_its)" != "0" ]; then
+    echo "mining_active"
+    return 0
+  fi
+
   echo "running"
 }
 
@@ -96,13 +153,18 @@ parse_last_its() {
   fi
 
   local value
-  value="$(tail -n 120 "$CODED_RUNTIME_LOG" \
+  value="$(tail -n 200 "$CODED_RUNTIME_LOG" \
     | grep -Eo '\[[A-Za-z0-9_-]+\] [0-9.,]+ it/s' \
     | tail -1 \
     | awk '{print $(NF-1)}' \
     | tr -d ',.' || true)"
 
-  if [ -z "$value" ]; then echo 0; else echo "$value"; fi
+  if [ -n "$value" ] && [ "$value" != "000" ]; then
+    echo "$value"
+    return 0
+  fi
+
+  compute_hi_timing_its
 }
 
 parse_avg_its() {
@@ -112,13 +174,23 @@ parse_avg_its() {
   fi
 
   local value
-  value="$(tail -n 120 "$CODED_RUNTIME_LOG" \
+  value="$(tail -n 200 "$CODED_RUNTIME_LOG" \
     | grep -Eo '[0-9.,]+ avg it/s' \
     | tail -1 \
     | awk '{print $1}' \
     | tr -d ',.' || true)"
 
-  if [ -z "$value" ]; then echo 0; else echo "$value"; fi
+  if [ -n "$value" ] && [ "$value" != "000" ]; then
+    echo "$value"
+    return 0
+  fi
+
+  if [ -f "$CODED_HI_METRICS_CACHE" ]; then
+    cat "$CODED_HI_METRICS_CACHE"
+    return 0
+  fi
+
+  compute_hi_timing_its
 }
 
 effective_threads_for_heartbeat() {
