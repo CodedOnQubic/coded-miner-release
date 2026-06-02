@@ -1,1 +1,1 @@
-coded-miner-macos-arm64-v0.7.60-m1099z207c-mac-arm-first-job.tar.gz
+coded-miner-macos-arm64-v0.7.61-m1099z210-mac-arm-portable.tar.gz
