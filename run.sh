@@ -1,13 +1,33 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${VERSION:-v0.1.0}"
+VERSION="${VERSION:-latest}"
 POOL="${POOL:-pool.codedonqubic.com:7777}"
 WALLET="${WALLET:-}"
 WORKER="${WORKER:-coded-mac}"
-THREADS="${THREADS:-0}"
+THREADS="${THREADS:-${CODED_THREADS:-${COMMAND_THREADS:-0}}}"
 
-BASE_URL="https://github.com/CodedOnQubic/coded-miner-release/raw/main"
+CHANNEL="${CHANNEL:-main}"
+BASE_URL="${BASE_URL:-https://github.com/CodedOnQubic/coded-miner-release/raw/${CHANNEL}}"
+
+# M10.99Z200_MAC_ARM_FULLSCORE_PUBLIC_RUN
+CODED_ANALYTICS="${CODED_ANALYTICS:-}"
+if [ -z "$CODED_ANALYTICS" ]; then
+  OLD_ANALYTICS="${oded_analytics:-${ODED_ANALYTICS:-}}"
+  case "$(echo "$OLD_ANALYTICS" | tr '[:lower:]' '[:upper:]')" in
+    YES|TRUE|1|ON) CODED_ANALYTICS="YES" ;;
+  esac
+fi
+
+export CODED_ANALYTICS="${CODED_ANALYTICS:-YES}"
+export CODED_FLEET_JOIN="${CODED_FLEET_JOIN:-YES}"
+export CODED_FORCE_FULLSCORE="${CODED_FORCE_FULLSCORE:-1}"
+export CODED_FULLSCORE_ALL_BACKENDS="${CODED_FULLSCORE_ALL_BACKENDS:-1}"
+export CODED_PREFILTER_DIFFICULTY="${CODED_PREFILTER_DIFFICULTY:-0}"
+export CODED_RELEASE_CHANNEL="${CODED_RELEASE_CHANNEL:-${CHANNEL}}"
+export CODED_VERSION="${CODED_VERSION:-${VERSION}}"
+export CODED_THREADS="${CODED_THREADS:-$THREADS}"
+export COMMAND_THREADS="${COMMAND_THREADS:-$THREADS}"
 
 if [ -z "$WALLET" ]; then
   echo "[ERROR] WALLET missing"
@@ -22,6 +42,8 @@ ARCH="$(uname -m)"
 echo "[CODED] System: $OS / $ARCH"
 
 if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
+  export CODED_PLATFORM="${CODED_PLATFORM:-macos-arm64}"
+  export CODED_KERNEL_BACKEND="${CODED_KERNEL_BACKEND:-scalar}"
   echo "[CODED] Using native macOS ARM build"
 
   WORKDIR="/tmp/coded-miner-macos-arm64"
@@ -34,6 +56,15 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
   tar -xzf /tmp/$ARTIFACT -C "$WORKDIR"
   chmod +x "$WORKDIR/coded-miner"
 
+  CODED_ANALYTICS="$CODED_ANALYTICS" \
+  CODED_FLEET_JOIN="$CODED_FLEET_JOIN" \
+  CODED_FORCE_FULLSCORE="$CODED_FORCE_FULLSCORE" \
+  CODED_FULLSCORE_ALL_BACKENDS="$CODED_FULLSCORE_ALL_BACKENDS" \
+  CODED_PREFILTER_DIFFICULTY="$CODED_PREFILTER_DIFFICULTY" \
+  CODED_KERNEL_BACKEND="$CODED_KERNEL_BACKEND" \
+  CODED_PLATFORM="$CODED_PLATFORM" \
+  CODED_THREADS="$THREADS" \
+  COMMAND_THREADS="$THREADS" \
   exec "$WORKDIR/coded-miner" \
     --pool "$POOL" \
     --wallet "$WALLET" \
@@ -67,6 +98,15 @@ docker load < /tmp/coded-miner-docker.tar.gz
 
 exec docker run --rm \
   --platform "$PLATFORM" \
+  -e CODED_ANALYTICS="$CODED_ANALYTICS" \
+  -e CODED_FLEET_JOIN="$CODED_FLEET_JOIN" \
+  -e CODED_FORCE_FULLSCORE="$CODED_FORCE_FULLSCORE" \
+  -e CODED_FULLSCORE_ALL_BACKENDS="$CODED_FULLSCORE_ALL_BACKENDS" \
+  -e CODED_PREFILTER_DIFFICULTY="$CODED_PREFILTER_DIFFICULTY" \
+  -e CODED_KERNEL_BACKEND="${CODED_KERNEL_BACKEND:-auto}" \
+  -e CODED_PLATFORM="${CODED_PLATFORM:-docker-linux-amd64}" \
+  -e CODED_THREADS="$THREADS" \
+  -e COMMAND_THREADS="$THREADS" \
   "coded-miner:${VERSION}" \
   --pool "$POOL" \
   --wallet "$WALLET" \
