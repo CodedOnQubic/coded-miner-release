@@ -60,6 +60,24 @@ CODED_RUNTIME_LOG="${CODED_RUNTIME_LOG:-/tmp/coded-miner-${WORKER}.log}"
 CODED_HI_METRICS_STATE="${CODED_HI_METRICS_STATE:-/tmp/coded-miner-${WORKER}.hi.state}"
 CODED_HI_METRICS_CACHE="${CODED_HI_METRICS_CACHE:-/tmp/coded-miner-${WORKER}.hi.cache}"
 
+CODED_VERBOSE_HI="${CODED_VERBOSE_HI:-0}"
+
+# M10.99Z209_QUIET_CONSOLE_KEEP_FULL_RUNTIME_LOG
+# Keep the full miner output in CODED_RUNTIME_LOG for analytics parsing,
+# but hide high-frequency HI_TIMING spam from the public terminal by default.
+coded_console_filter() {
+  if [ "${CODED_VERBOSE_HI:-0}" = "1" ]; then
+    cat
+    return 0
+  fi
+
+  awk '
+    /\[HI_TIMING\]/ { next }
+    /\[HI_TIMING_SUMMARY\]/ { next }
+    { print; fflush(); }
+  '
+}
+
 # M10.99Z208_HI_TIMING_METRICS_FALLBACK
 compute_hi_timing_its() {
   if [ ! -f "$CODED_RUNTIME_LOG" ]; then
@@ -302,7 +320,7 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
     --pool "$POOL" \
     --wallet "$WALLET" \
     --worker "$WORKER" \
-    --threads "$THREADS" 2>&1 | tee -a "$CODED_RUNTIME_LOG"
+    --threads "$THREADS" 2>&1 | tee -a "$CODED_RUNTIME_LOG" | coded_console_filter
   exit ${PIPESTATUS[0]}
 fi
 
