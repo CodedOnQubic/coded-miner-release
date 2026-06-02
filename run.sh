@@ -76,6 +76,14 @@ CODED_HI_METRICS_CACHE="${CODED_HI_METRICS_CACHE:-/tmp/coded-miner-${WORKER}.hi.
 
 CODED_VERBOSE_HI="${CODED_VERBOSE_HI:-0}"
 
+# M10.99Z217A_MAC_SELF_UPDATE_DEFAULTS
+export CODED_SELF_UPDATE="${CODED_SELF_UPDATE:-1}"
+export CODED_SELF_UPDATE_SEC="${CODED_SELF_UPDATE_SEC:-60}"
+export CODED_RELEASE_BASE_URL="${CODED_RELEASE_BASE_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main}"
+export CODED_LATEST_MACOS_ARM64_URL="${CODED_LATEST_MACOS_ARM64_URL:-$CODED_RELEASE_BASE_URL/latest-macos-arm64.txt}"
+export CODED_CURRENT_RELEASE_FILE="${CODED_CURRENT_RELEASE_FILE:-}"
+
+
 # M10.99Z211_CLEAN_USER_CONSOLE_WHITELIST
 # Runtime log keeps full miner output for analytics.
 # Terminal output is intentionally clean for public Mac users.
@@ -436,6 +444,59 @@ effective_threads_for_heartbeat() {
   nproc 2>/dev/null || echo 0
 }
 
+
+# M10.99Z217A_MAC_SELF_UPDATE_WATCHDOG
+coded_current_release_file() {
+  if [ -n "${CODED_CURRENT_RELEASE_FILE:-}" ]; then
+    echo "$CODED_CURRENT_RELEASE_FILE"
+    return 0
+  fi
+
+  if [ -f "${WORKDIR:-/tmp/coded-miner-macos-arm64}/release_manifest.json" ]; then
+    # Best effort only. latest-macos-arm64.txt is the source of truth.
+    grep -E '"version"' "${WORKDIR:-/tmp/coded-miner-macos-arm64}/release_manifest.json" \
+      | head -1 \
+      | sed -E 's/.*"version"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/' || true
+  fi
+}
+
+coded_latest_release_file() {
+  curl -fsSL "$CODED_LATEST_MACOS_ARM64_URL?self_update=$(date +%s)" 2>/dev/null \
+    | tr -d '\r\n ' || true
+}
+
+start_self_update_watchdog() {
+  if [ "${CODED_SELF_UPDATE:-1}" != "1" ]; then
+    return 0
+  fi
+
+  if [ "${CODED_SELF_UPDATE_STARTED:-0}" = "1" ]; then
+    return 0
+  fi
+  export CODED_SELF_UPDATE_STARTED=1
+
+  (
+    sleep "${CODED_SELF_UPDATE_SEC:-60}"
+
+    while true; do
+      latest="$(coded_latest_release_file)"
+      current="$(coded_current_release_file)"
+
+      if [ -n "$latest" ] && [ -n "$current" ] && [ "$latest" != "$current" ]; then
+        echo "[CODED] Update available: current=$current latest=$latest"
+        echo "[CODED] Restarting miner to apply latest release..."
+        pkill -TERM -f "/tmp/coded-miner-macos-arm64/coded-miner" 2>/dev/null || true
+        pkill -TERM -f "coded-miner.*--worker ${WORKER}" 2>/dev/null || true
+        sleep 3
+        pkill -KILL -f "/tmp/coded-miner-macos-arm64/coded-miner" 2>/dev/null || true
+        exit 0
+      fi
+
+      sleep "${CODED_SELF_UPDATE_SEC:-60}"
+    done
+  ) &
+}
+
 start_external_fleet_heartbeat() {
   if [ "${CODED_FLEET_JOIN:-YES}" != "YES" ]; then
     return 0
@@ -506,6 +567,13 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
   export CODED_RELEASE_BUILD_READY="YES"
   export CODED_EXPERIMENT_READY="${CODED_EXPERIMENT_READY:-YES}"
   export CODED_RELEASE_BUILD_READY="YES"
+
+# M10.99Z217A_CAPTURE_CURRENT_RELEASE
+if [ -z "${CODED_CURRENT_RELEASE_FILE:-}" ]; then
+  CODED_CURRENT_RELEASE_FILE="$(coded_latest_release_file)"
+  export CODED_CURRENT_RELEASE_FILE
+fi
+
   start_external_fleet_heartbeat
   echo "[CODED] Using native macOS ARM build"
 
@@ -519,6 +587,8 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
 
   curl -L -o /tmp/$ARTIFACT "$BASE_URL/$ARTIFACT"
   tar -xzf /tmp/$ARTIFACT -C "$WORKDIR"
+  # M10.99Z217A_START_SELF_UPDATE_WATCHDOG
+  start_self_update_watchdog
   chmod +x "$WORKDIR/coded-miner"
 
   CODED_ANALYTICS="$CODED_ANALYTICS" \
