@@ -101,6 +101,58 @@ start_external_fleet_heartbeat() {
   ) &
 }
 
+
+# M10.99Z203A_EXTERNAL_FLEET_HEARTBEAT_FORCE
+API_URL="${API_URL:-https://api.codedonqubic.com}"
+
+coded_json_bool() {
+  case "$1" in
+    YES|yes|true|TRUE|1|ON|on) echo true ;;
+    *) echo false ;;
+  esac
+}
+
+start_external_fleet_heartbeat() {
+  if [ "${CODED_FLEET_JOIN:-YES}" != "YES" ]; then
+    return 0
+  fi
+
+  DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-${CODED_PLATFORM:-unknown}:${WORKER}}}"
+
+  echo "[CODED] Fleet heartbeat: $API_URL/fleet/devices/heartbeat device=$DEVICE_ID"
+
+  (
+    while true; do
+      curl -fsS -X POST "$API_URL/fleet/devices/heartbeat" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"device_id\":\"$DEVICE_ID\",
+          \"worker_name\":\"$WORKER\",
+          \"wallet\":\"$WALLET\",
+          \"platform\":\"${CODED_PLATFORM:-unknown}\",
+          \"os\":\"$OS\",
+          \"arch\":\"$ARCH\",
+          \"backend\":\"${CODED_KERNEL_BACKEND:-auto}\",
+          \"runtime_mode\":\"${CODED_RUNTIME_MODE:-default_analytics}\",
+          \"device_role\":\"${CODED_DEVICE_ROLE:-default_analytics}\",
+          \"fullscore\":$(coded_json_bool "${CODED_FORCE_FULLSCORE:-1}"),
+          \"CODED_FORCE_FULLSCORE\":\"${CODED_FORCE_FULLSCORE:-1}\",
+          \"CODED_FULLSCORE_ALL_BACKENDS\":\"${CODED_FULLSCORE_ALL_BACKENDS:-1}\",
+          \"threads\":${THREADS:-0},
+          \"experiment_ready\":$(coded_json_bool "${CODED_EXPERIMENT_READY:-YES}"),
+          \"release_build_ready\":$(coded_json_bool "${CODED_RELEASE_BUILD_READY:-YES}"),
+          \"capabilities\":{
+            \"scalar\":true,
+            \"macos_arm64\":$([ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ] && echo true || echo false),
+            \"docker\":$([ "${CODED_PLATFORM:-}" = "docker-linux-amd64" ] && echo true || echo false)
+          }
+        }" >/dev/null 2>&1 || true
+
+      sleep "${CODED_FLEET_HEARTBEAT_SEC:-30}"
+    done
+  ) &
+}
+
 echo "[CODED] System: $OS / $ARCH"
 
 if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
@@ -109,6 +161,7 @@ if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
   export CODED_RELEASE_BUILD_READY="${CODED_RELEASE_BUILD_READY:-YES}"
   start_external_fleet_heartbeat
 
+  start_external_fleet_heartbeat
   echo "[CODED] Using native macOS ARM build"
 
   WORKDIR="/tmp/coded-miner-macos-arm64"
