@@ -408,6 +408,25 @@ parse_max_real_score_passed() {
   [ "$v" = "null" ] && echo 0 || echo "$v"
 }
 
+# M10.99Z218C_PARSE_REAL_AUDIT_FIELDS
+parse_max_real_score_seen() {
+  local v
+  v="$(parse_quality_metric max_real_score_seen)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
+parse_total_audited() {
+  local v
+  v="$(parse_quality_metric total_audited)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
+parse_audit_rate() {
+  local v
+  v="$(parse_quality_metric audit_rate)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
 parse_max_real_score_audited_skip() {
   local v
   v="$(parse_quality_metric max_real_score_audited_skip)"
@@ -577,6 +596,7 @@ start_external_fleet_heartbeat() {
           \"experiment_ready\":$(coded_json_bool "${CODED_EXPERIMENT_READY:-YES}"),
           \"release_build_ready\":$(coded_json_bool "${CODED_RELEASE_BUILD_READY:-YES}"),
           \"runtime_state\":\"$(parse_runtime_state)\",
+          \"release_file\":\"${CODED_CURRENT_RELEASE_FILE:-unknown}\",
           \"last_its\":$(parse_last_its),
           \"avg_its\":$(parse_avg_its),
           \"total_seen\":$(parse_total_seen),
@@ -584,6 +604,9 @@ start_external_fleet_heartbeat() {
           \"total_skip\":$(parse_total_skip),
           \"pass_rate\":$(parse_pass_rate),
           \"false_negative\":$(parse_false_negative),
+          \"total_audited\":$(parse_total_audited),
+          \"audit_rate\":$(parse_audit_rate),
+          \"max_real_score_seen\":$(parse_max_real_score_seen),
           \"max_real_score_passed\":$(parse_max_real_score_passed),
           \"max_real_score_audited_skip\":$(parse_max_real_score_audited_skip),
           \"max_shadow_score_seen\":$(parse_max_shadow_score_seen),
