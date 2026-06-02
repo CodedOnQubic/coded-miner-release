@@ -272,7 +272,7 @@ parse_last_its() {
 }
 
 
-# M10.99Z212C_PARSE_FULLPATH_QUALITY_TELEMETRY
+# M10.99Z212E_NONZERO_FAST_SHADOW_SUMMARY_QUALITY
 parse_quality_metric() {
   local key="$1"
   if [ ! -f "$CODED_RUNTIME_LOG" ]; then
@@ -280,11 +280,31 @@ parse_quality_metric() {
     return 0
   fi
 
-  # Prefer FAST_SHADOW_SUMMARY because it is the aggregate pass-state line.
-  # Avoid generic fallback for pass_rate because HI_TIMING interleaving can corrupt nearby text.
-  local value
-  value="$(tail -n 1500 "$CODED_RUNTIME_LOG" \
+  # Use only complete FAST_SHADOW_SUMMARY lines with total_seen > 0.
+  # Early zero summaries are not useful for frontend/pipeline quality state.
+  local line value
+  line="$(tail -n 5000 "$CODED_RUNTIME_LOG" \
     | grep 'FAST_SHADOW_SUMMARY' \
+    | awk '
+      {
+        seen = 0
+        if (match($0, /total_seen=[0-9]+/)) {
+          s = substr($0, RSTART, RLENGTH)
+          sub("total_seen=", "", s)
+          seen = s + 0
+        }
+        if (seen > 0) print $0
+      }
+    ' \
+    | tail -1 || true)"
+
+  if [ -z "$line" ]; then
+    echo null
+    return 0
+  fi
+
+  value="$(printf "%s
+" "$line" \
     | grep -Eo "${key}=[0-9.]+" \
     | tail -1 \
     | cut -d= -f2 || true)"
@@ -296,8 +316,6 @@ parse_quality_metric() {
 
   case "$key" in
     pass_rate)
-      # Logs can be interleaved with HI_TIMING global_count fragments.
-      # Accept only sane percentages. Otherwise calculate from total_pass/total_seen.
       awk -v v="$value" 'BEGIN { if (v >= 0 && v <= 100) print v; else print "null"; }'
       ;;
     *)
@@ -305,6 +323,7 @@ parse_quality_metric() {
       ;;
   esac
 }
+
 
 parse_total_seen() {
   parse_quality_metric total_seen
