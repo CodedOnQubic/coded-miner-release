@@ -416,6 +416,56 @@ parse_max_real_score_seen() {
 }
 
 # M10.99Z219D_PARSE_REAL_SCORE_AVAILABLE
+
+# M10.99Z221C_PARSE_BACKEND_CONTRACT_FIELDS
+parse_quality_string_metric() {
+  key="$1"
+  if [ -z "${LOG_FILE:-}" ] && [ -n "${WORKER:-}" ]; then
+    LOG_FILE="/tmp/coded-miner-${WORKER}.log"
+  fi
+  if [ ! -f "${LOG_FILE:-/dev/null}" ]; then
+    echo ""
+    return 0
+  fi
+  grep "FAST_SHADOW_SUMMARY" "$LOG_FILE" 2>/dev/null \
+    | tail -n 1 \
+    | tr ' ' '\n' \
+    | grep -E "^${key}=" \
+    | tail -n 1 \
+    | cut -d= -f2- \
+    | tr -d '\r\n' || true
+}
+
+parse_backend_kind() {
+  v="$(parse_quality_string_metric backend_kind)"
+  [ -n "$v" ] && echo "$v" || echo ""
+}
+
+parse_backend_short() {
+  v="$(parse_quality_string_metric backend_short)"
+  [ -n "$v" ] && echo "$v" || echo ""
+}
+
+parse_backend_platform() {
+  v="$(parse_quality_string_metric backend_platform)"
+  [ -n "$v" ] && echo "$v" || echo "${CODED_PLATFORM:-}"
+}
+
+parse_backend_validation() {
+  v="$(parse_quality_string_metric backend_validation)"
+  [ -n "$v" ] && echo "$v" || echo ""
+}
+
+parse_real_score_authoritative() {
+  v="$(parse_quality_metric real_score_authoritative)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
+parse_gpu_accelerated() {
+  v="$(parse_quality_metric gpu_accelerated)"
+  [ "$v" = "null" ] && echo 0 || echo "$v"
+}
+
 parse_real_score_available() {
   local v
   v="$(parse_quality_metric real_score_available)"
@@ -615,6 +665,12 @@ start_external_fleet_heartbeat() {
           \"audit_rate\":$(parse_audit_rate),
           \"max_real_score_seen\":$(parse_max_real_score_seen),
           \"real_score_available\":$(parse_real_score_available),
+          \"backend_kind\":\"$(parse_backend_kind)\",
+          \"backend_short\":\"$(parse_backend_short)\",
+          \"backend_platform\":\"$(parse_backend_platform)\",
+          \"backend_validation\":\"$(parse_backend_validation)\",
+          \"real_score_authoritative\":$(parse_real_score_authoritative),
+          \"gpu_accelerated\":$(parse_gpu_accelerated),
           \"max_real_score_passed\":$(parse_max_real_score_passed),
           \"max_real_score_audited_skip\":$(parse_max_real_score_audited_skip),
           \"max_shadow_score_seen\":$(parse_max_shadow_score_seen),
