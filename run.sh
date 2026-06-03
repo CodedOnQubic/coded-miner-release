@@ -77,6 +77,12 @@ CODED_HI_METRICS_CACHE="${CODED_HI_METRICS_CACHE:-/tmp/coded-miner-${WORKER}.hi.
 CODED_VERBOSE_HI="${CODED_VERBOSE_HI:-0}"
 
 # M10.99Z217A_MAC_SELF_UPDATE_DEFAULTS
+
+# M10.99Z221F_MACOS_X86_64_RELEASE_SUPPORT
+CODED_LATEST_MACOS_X86_64_URL="${CODED_LATEST_MACOS_X86_64_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/latest-macos-x86_64.txt}"
+CODED_MACOS_X86_64_RELEASE_BASE_URL="${CODED_MACOS_X86_64_RELEASE_BASE_URL:-https://github.com/CodedOnQubic/coded-miner-release/raw/main}"
+export CODED_LATEST_MACOS_X86_64_URL
+export CODED_MACOS_X86_64_RELEASE_BASE_URL
 export CODED_SELF_UPDATE="${CODED_SELF_UPDATE:-1}"
 export CODED_SELF_UPDATE_SEC="${CODED_SELF_UPDATE_SEC:-60}"
 export CODED_RELEASE_BASE_URL="${CODED_RELEASE_BASE_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main}"
@@ -582,7 +588,14 @@ coded_current_release_file() {
 }
 
 coded_latest_release_file() {
-  curl -fsSL "$CODED_LATEST_MACOS_ARM64_URL?self_update=$(date +%s)" 2>/dev/null \
+  # M10.99Z221F_PLATFORM_AWARE_LATEST_RELEASE
+  if [ "${CODED_PLATFORM:-}" = "macos-x86_64" ] || { [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && [ "$(uname -m 2>/dev/null || true)" = "x86_64" ]; }; then
+    curl -fsSL "$CODED_LATEST_MACOS_X86_64_URL?self_update=$(date +%s)" 2>/dev/null \
+      | tr -d '\r\n ' || true
+    return 0
+  fi
+
+  curl -fsSL "${CODED_LATEST_MACOS_ARM64_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/latest-macos-arm64.txt}?self_update=$(date +%s)" 2>/dev/null \
     | tr -d '\r\n ' || true
 }
 
@@ -616,6 +629,27 @@ start_self_update_watchdog() {
       sleep "${CODED_SELF_UPDATE_SEC:-60}"
     done
   ) &
+}
+
+
+# M10.99Z221F_X86_64_DOWNLOAD_OVERRIDE
+coded_download_url_for_current_platform() {
+  if [ "${CODED_PLATFORM:-}" = "macos-x86_64" ]; then
+    latest="$(coded_latest_release_file)"
+    if [ -n "$latest" ]; then
+      echo "$CODED_MACOS_X86_64_RELEASE_BASE_URL/$latest"
+      return 0
+    fi
+    echo "$CODED_MACOS_X86_64_RELEASE_BASE_URL/coded-miner-macos-x86_64.tar.gz"
+    return 0
+  fi
+
+  if [ -n "${CODED_TARBALL_URL:-}" ]; then
+    echo "$CODED_TARBALL_URL"
+    return 0
+  fi
+
+  echo "${CODED_MACOS_ARM64_TARBALL_URL:-https://github.com/CodedOnQubic/coded-miner-release/raw/main/coded-miner-macos-arm64.tar.gz}"
 }
 
 start_external_fleet_heartbeat() {
@@ -691,6 +725,16 @@ start_external_fleet_heartbeat() {
   ) &
 }
 
+
+# M10.99Z221F_PLATFORM_NORMALIZE
+if [ "$(uname -s 2>/dev/null || true)" = "Darwin" ] && [ "$(uname -m 2>/dev/null || true)" = "x86_64" ]; then
+  CODED_PLATFORM="${CODED_PLATFORM:-macos-x86_64}"
+  CODED_BACKEND_LABEL="${CODED_BACKEND_LABEL:-avx2}"
+  WORKDIR="${WORKDIR:-/tmp/coded-miner-macos-x86_64}"
+  TARBALL="${TARBALL:-/tmp/coded-miner-macos-x86_64.tar.gz}"
+  export CODED_PLATFORM CODED_BACKEND_LABEL WORKDIR TARBALL
+fi
+
 echo "[CODED] System: $OS / $ARCH"
 
 if [[ "$OS" == "Darwin" && "$ARCH" == "arm64" ]]; then
@@ -707,7 +751,11 @@ if [ -z "${CODED_CURRENT_RELEASE_FILE:-}" ]; then
 fi
 
   start_external_fleet_heartbeat
+  if [ "${CODED_PLATFORM:-}" = "macos-x86_64" ]; then
+  echo "[CODED] Using native macOS Intel x86_64 build"
+else
   echo "[CODED] Using native macOS ARM build"
+fi
 
   WORKDIR="/tmp/coded-miner-macos-arm64"
   # M10.99Z201_VERSIONED_MACOS_ARM_ARTIFACT
@@ -718,6 +766,9 @@ fi
   mkdir -p "$WORKDIR"
 
   curl -L -o /tmp/$ARTIFACT "$BASE_URL/$ARTIFACT"
+
+# M10.99Z221F_DOWNLOAD_URL_SELECT
+DOWNLOAD_URL="$(coded_download_url_for_current_platform)"
   tar -xzf /tmp/$ARTIFACT -C "$WORKDIR"
   # M10.99Z217A_START_SELF_UPDATE_WATCHDOG
   start_self_update_watchdog
