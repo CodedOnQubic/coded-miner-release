@@ -718,16 +718,24 @@ start_external_fleet_heartbeat() {
 
   DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-${CODED_PLATFORM:-unknown}:${WORKER}}}"
 
-  echo "[CODED] Fleet heartbeat: $API_URL/fleet/devices/heartbeat device=$DEVICE_ID"
+  echo "[CODED] Fleet heartbeat: $API_URL/fleet/devices/heartbeat device=$DEVICE_ID target=${CODED_TARGET:-unknown} builder=${CODED_BUILDER:-NO} builder_targets=${CODED_BUILDER_TARGETS:-}"
 
   (
     while true; do
+      # M10.99Z257B_RUNSH_EXPLICIT_FLEET_HEARTBEAT_FIELDS
       curl -fsS -X POST "$API_URL/fleet/devices/heartbeat" \
         -H "Content-Type: application/json" \
         -d "{
           \"device_id\":\"$DEVICE_ID\",
           \"worker_name\":\"$WORKER\",
           \"wallet\":\"$WALLET\",
+
+          \"target\":\"${CODED_TARGET:-unknown}\",
+          \"analytics\":$(coded_json_bool "${CODED_ANALYTICS:-YES}"),
+          \"builder\":$(coded_json_bool "${CODED_BUILDER:-NO}"),
+          \"builder_targets\":$(coded_builder_json_array),
+          \"miner_running\":$(coded_process_running_bool),
+
           \"platform\":\"${CODED_PLATFORM:-unknown}\",
           \"os\":\"$OS\",
           \"arch\":\"$ARCH\",
