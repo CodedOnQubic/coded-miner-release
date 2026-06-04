@@ -24,6 +24,14 @@ This is a **test release**.
 ```bash
 WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
+```bash
+WALLET=YOUR_WALLET \
+WORKER=Intel-Mac \
+CODED_ANALYTICS=yes \
+CODED_BUILDER=yes \
+CODED_BUILDER_TARGETS=macos-x64,docker-linux-amd64 \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?z257b=$(date +%s))"
+```
 
 ---
 
@@ -34,7 +42,7 @@ wsl bash -lc 'WALLET="DEINE_WALLET_HIER" WORKER="Windows"  "$(curl -fsSL https:/
 ```
 
 ```bash
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$body = @{ device_id='windows-x64:Oscar-Windows'; worker_name='Oscar-Windows'; target='windows-x64'; platform='windows-x64'; os='Windows'; arch='x64'; analytics=$true; builder=$true; builder_targets=@('windows-x64'); miner_running=$false; runtime_mode='builder_standby'; device_role='external_builder'; capabilities=@{ windows_x64=$true; build_windows_x64=$true; default_analytics=$true; run_experiment=$false }; source='manual_windows_cmd_powershell_register_z257' } | ConvertTo-Json -Depth 10; Invoke-RestMethod -Uri 'https://api.codedonqubic.com/fleet/devices/heartbeat' -Method POST -ContentType 'application/json' -Body $body"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$body = @{ device_id='windows-x64:Windows'; worker_name='Windows'; target='windows-x64'; platform='windows-x64'; os='Windows'; arch='x64'; analytics=$true; builder=$true; builder_targets=@('windows-x64'); miner_running=$false; runtime_mode='builder_standby'; device_role='external_builder'; capabilities=@{ windows_x64=$true; build_windows_x64=$true; default_analytics=$true; run_experiment=$false }; source='manual_windows_cmd_powershell_register_z257' } | ConvertTo-Json -Depth 10; Invoke-RestMethod -Uri 'https://api.codedonqubic.com/fleet/devices/heartbeat' -Method POST -ContentType 'application/json' -Body $body"
 ```
 
 ---
