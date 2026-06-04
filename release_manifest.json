@@ -1,10 +1,14 @@
 {
-  "version": "v0.7.56-m1099z126-z127-canonical-default-871a5b6-20260603T201811Z",
+  "version": "v0.7.57-m1099z255a-primary-hive-13161d8-20260604T110415Z",
   "target": "hive-linux-amd64-avx512",
+  "platform": "hive-linux",
+  "arch": "amd64",
+  "backend": "avx512",
   "repo": "CodedOnQubic/coded-miner",
   "branch": "main",
-  "commit": "871a5b6dfb55921af7e338a85def8b1f242d228e",
-  "built_at": "2026-06-03T20:25:09Z",
-  "builder_rig_id": "Rig2X3D",
-  "marker": "M10.99W5B_RELEASE_BUILDER_ROUTES"
+  "commit": "13161d86ef46155772b394de230a5482dbfbe589",
+  "built_at": "2026-06-04T11:04:24Z",
+  "builder_rig_id": "pool-primary",
+  "build_matrix_id": "M10.99Z255A_PRIMARY_TEMP_BUILDER_20260604T110415Z",
+  "marker": "M10.99Z255A_TARGET_EXACT_SELF_UPDATE_FIX"
 }
