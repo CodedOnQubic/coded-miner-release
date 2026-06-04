@@ -31,7 +31,7 @@ WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercon
 
 ```bash
 WALLET=YOUR_WALLET \
-WORKER=Oscar-Windows \
+WORKER=Worker-Windows \
 CODED_ANALYTICS=yes \
 CODED_BUILDER=yes \
 CODED_BUILDER_TARGETS=windows-x64,docker-linux-amd64 \
