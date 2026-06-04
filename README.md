@@ -30,12 +30,7 @@ WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercon
 ## 🐳 Docker (Linux / Windows / Intel Mac)
 
 ```bash
-WALLET=YOUR_WALLET \
-WORKER=Worker-Windows \
-CODED_ANALYTICS=yes \
-CODED_BUILDER=yes \
-CODED_BUILDER_TARGETS=windows-x64,docker-linux-amd64 \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?
+wsl bash -lc 'WALLET="DEINE_WALLET_HIER" WORKER="Windows" CODED_ANALYTICS="yes" CODED_BUILDER="yes" CODED_BUILDER_TARGETS="windows-x64,docker-linux-amd64" bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?z257b=$(date +%s))"'
 ```
 
 ---
