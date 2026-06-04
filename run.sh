@@ -63,6 +63,29 @@ fi
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
+# M10.99Z257_RUNSH_STABLE_EXTERNAL_FLEET_JOIN
+# Explicit external fleet onboarding fields.
+# This does not touch HiveOS start.sh / h-run.sh.
+case "${OS}:${ARCH}" in
+  Darwin:arm64) CODED_TARGET="${CODED_TARGET:-macos-arm64}" ;;
+  Darwin:x86_64|Darwin:amd64) CODED_TARGET="${CODED_TARGET:-macos-x64}" ;;
+  Linux:x86_64|Linux:amd64) CODED_TARGET="${CODED_TARGET:-docker-linux-amd64}" ;;
+  MINGW*:x86_64|MSYS*:x86_64|CYGWIN*:x86_64) CODED_TARGET="${CODED_TARGET:-windows-x64}" ;;
+  *) CODED_TARGET="${CODED_TARGET:-${OS}-${ARCH}}" ;;
+esac
+
+export CODED_TARGET
+export CODED_BUILDER="${CODED_BUILDER:-NO}"
+export CODED_BUILDER_TARGETS="${CODED_BUILDER_TARGETS:-}"
+export CODED_MINER_RUNNING="${CODED_MINER_RUNNING:-false}"
+
+if [ "${CODED_BUILDER}" = "YES" ] || [ "${CODED_BUILDER}" = "yes" ] || [ "${CODED_BUILDER}" = "true" ] || [ "${CODED_BUILDER}" = "1" ]; then
+  if [ -z "$CODED_BUILDER_TARGETS" ]; then
+    CODED_BUILDER_TARGETS="$CODED_TARGET"
+    export CODED_BUILDER_TARGETS
+  fi
+fi
+
 
 # M10.99Z203A_EXTERNAL_FLEET_HEARTBEAT
 API_URL="${API_URL:-https://api.codedonqubic.com}"
@@ -106,7 +129,7 @@ if [ "${CODED_SUPERVISOR_CHILD:-0}" != "1" ] && [ "${CODED_SELF_UPDATE_SUPERVISO
 
   trap cleanup_supervisor INT TERM
 
-  echo "[CODED] Fleet supervisor active: worker=${WORKER:-unknown} update_sec=${CODED_SELF_UPDATE_SEC:-60}"
+  echo "[CODED] Fleet supervisor active: worker=${WORKER:-unknown} target=${CODED_TARGET:-unknown} script_check_sec=${CODED_SELF_UPDATE_SEC:-60}"
 
   while true; do
     TMP_RUN="/tmp/coded-run-${WORKER:-worker}.sh"
@@ -128,7 +151,7 @@ if [ "${CODED_SUPERVISOR_CHILD:-0}" != "1" ] && [ "${CODED_SELF_UPDATE_SUPERVISO
     wait "$CODED_CHILD_PID" || true
     CODED_CHILD_PID=""
 
-    echo "[CODED] Supervisor: miner child exited, refreshing latest release..."
+    echo "[CODED] Supervisor: miner child exited, refreshing launcher script before restart..."
     sleep 3
   done
 fi
@@ -230,6 +253,37 @@ compute_hi_timing_its() {
   echo "$rate"
 }
 
+
+# M10.99Z257_RUNSH_STABLE_EXTERNAL_FLEET_JOIN
+coded_builder_json_array() {
+  local raw="${CODED_BUILDER_TARGETS:-}"
+  if [ -z "$raw" ]; then
+    echo "[]"
+    return 0
+  fi
+
+  local out="["
+  local first=1
+  local item
+  IFS=',' read -r -a _coded_targets <<< "$raw"
+  for item in "${_coded_targets[@]}"; do
+    item="$(echo "$item" | sed 's/^ *//;s/ *$//')"
+    [ -z "$item" ] && continue
+    if [ "$first" -eq 0 ]; then out="$out,"; fi
+    out="$out\"$item\""
+    first=0
+  done
+  out="$out]"
+  echo "$out"
+}
+
+coded_process_running_bool() {
+  if pgrep -f "coded-miner" >/dev/null 2>&1; then
+    echo true
+  else
+    echo false
+  fi
+}
 
 coded_json_bool() {
   case "$1" in
