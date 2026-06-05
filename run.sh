@@ -721,13 +721,19 @@ print(urllib.parse.quote(sys.argv[1], safe=""))
 PYURL
 }
 
+# M10.99Z265B_EXTERNAL_BUILD_AGENT_JSON_FIX
+# Important: do not use a Python heredoc here, because the function receives JSON on stdin.
 coded_z265a_json_get() {
   local key="$1"
-  python3 - "$key" <<'PYJSON' 2>/dev/null || true
+  python3 -c '
 import sys, json
 key=sys.argv[1]
 try:
-    j=json.load(sys.stdin)
+    raw=sys.stdin.read()
+    if not raw.strip():
+        print("")
+        raise SystemExit(0)
+    j=json.loads(raw)
     cur=j
     for part in key.split("."):
         if isinstance(cur, dict):
@@ -738,20 +744,32 @@ try:
     if cur is None:
         print("")
     elif isinstance(cur, (dict, list)):
-        print(json.dumps(cur))
+        print(json.dumps(cur, separators=(",",":")))
     else:
         print(str(cur))
 except Exception:
     print("")
-PYJSON
+' "$key" 2>/dev/null || true
 }
 
+# M10.99Z265B_EXTERNAL_BUILD_AGENT_JSON_FIX
 coded_z265a_post_json() {
   local path="$1"
   local body="$2"
-  curl -fsS -X POST "$API_URL$path" \
+  local out code
+  out="$(curl -sS -w "\nHTTP_CODE:%{http_code}" -X POST "$API_URL$path" \
     -H "Content-Type: application/json" \
-    -d "$body" >/dev/null 2>&1 || true
+    -d "$body" 2>&1 || true)"
+  code="$(printf "%s\n" "$out" | grep 'HTTP_CODE:' | tail -1 | cut -d: -f2 || true)"
+  out="$(printf "%s\n" "$out" | sed '/HTTP_CODE:/d' || true)"
+
+  if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+    echo "[M10.99Z265B_EXTERNAL_BUILD_AGENT_JSON_FIX] POST failed path=$path http=$code response=$out"
+    return 1
+  fi
+
+  echo "[M10.99Z265B_EXTERNAL_BUILD_AGENT_JSON_FIX] POST ok path=$path http=$code"
+  return 0
 }
 
 coded_z265a_make_stub_artifact() {
@@ -834,18 +852,32 @@ coded_external_build_agent_loop() {
       CMD_ID="$(printf "%s" "$RESP" | coded_z265a_json_get "command.command_id")"
       TARGET="$(printf "%s" "$RESP" | coded_z265a_json_get "command.target")"
 
-      [ -z "$CMD_ID" ] && continue
+      if [ -z "$CMD_ID" ]; then
+        echo "[M10.99Z265B_EXTERNAL_BUILD_AGENT_JSON_FIX] no command_id parsed from /next response; response=$(printf "%s" "$RESP" | head -c 500)"
+        continue
+      fi
 
       echo "[M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE] picked command=$CMD_ID target=$TARGET"
 
-      coded_z265a_post_json "/fleet/external-build/$CMD_ID/running" "{
+      if ! coded_z265a_post_json "/fleet/external-build/$CMD_ID/running" "{
         \"result\":{
-          \"marker\":\"M10.99Z265A_EXTERNAL_BUILD_AGENT_RUNNING\",
+          \"marker\":\"M10.99Z265B_EXTERNAL_BUILD_AGENT_RUNNING\",
           \"device_id\":\"$DEVICE_ID\",
           \"worker\":\"${WORKER:-unknown}\",
           \"target\":\"$TARGET\"
         }
-      }"
+      }"; then
+        coded_z265a_post_json "/fleet/external-build/$CMD_ID/fail" "{
+          \"error\":\"Z265B failed to mark external build command running\",
+          \"result\":{
+            \"marker\":\"M10.99Z265B_EXTERNAL_BUILD_AGENT_RUNNING_FAILED\",
+            \"status\":\"safe_failed_before_build\",
+            \"device_id\":\"$DEVICE_ID\",
+            \"target\":\"$TARGET\"
+          }
+        }" || true
+        continue
+      fi
 
       if [ "${CODED_EXTERNAL_BUILD_STOP_MINER:-YES}" = "YES" ]; then
         echo "[M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE] stopping miner for build window command=$CMD_ID"
@@ -861,7 +893,7 @@ coded_external_build_agent_loop() {
 
         coded_z265a_post_json "/fleet/external-build/$CMD_ID/complete" "{
           \"result\":{
-            \"marker\":\"M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_COMPLETED\",
+            \"marker\":\"M10.99Z265B_EXTERNAL_BUILD_AGENT_STUB_COMPLETED\",
             \"status\":\"stub_build_completed\",
             \"device_id\":\"$DEVICE_ID\",
             \"worker\":\"${WORKER:-unknown}\",
@@ -879,7 +911,7 @@ coded_external_build_agent_loop() {
         coded_z265a_post_json "/fleet/external-build/$CMD_ID/fail" "{
           \"error\":\"Z265A stub artifact creation failed\",
           \"result\":{
-            \"marker\":\"M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_FAILED\",
+            \"marker\":\"M10.99Z265B_EXTERNAL_BUILD_AGENT_STUB_FAILED\",
             \"status\":\"stub_build_failed\",
             \"device_id\":\"$DEVICE_ID\",
             \"target\":\"$TARGET\"
