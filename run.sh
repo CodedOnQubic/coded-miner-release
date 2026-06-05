@@ -211,27 +211,31 @@ coded_apply_public_oneliner_defaults_z268k() {
   # Auto-update should be on for normal public one-liner unless explicitly disabled.
   export CODED_SELF_UPDATE_SUPERVISOR="${CODED_SELF_UPDATE_SUPERVISOR:-1}"
 
-  # macOS ARM public safe default: reference backend, 1 thread.
+  # M10.99Z268M_PUBLIC_ARM_SCALAR_DEFAULT
+  # Public macOS ARM miners default to stable scalar + 1 thread.
+  # ARM reference is opt-in via CODED_ARM_REFERENCE_DEFAULT=1.
   if [ "${CODED_PLATFORM:-}" = "macos-arm64" ]; then
-    export CODED_ARM_REFERENCE_DEFAULT="${CODED_ARM_REFERENCE_DEFAULT:-1}"
-    if [ "${CODED_ARM_REFERENCE_DEFAULT:-1}" = "1" ]; then
+    export CODED_ARM_REFERENCE_DEFAULT="${CODED_ARM_REFERENCE_DEFAULT:-0}"
+
+    if ! printf "%s" "${THREADS:-}" | grep -Eq '^[1-9][0-9]*$'; then
+      export THREADS="1"
+    fi
+    if [ "${THREADS:-0}" -le 0 ] 2>/dev/null; then
+      export THREADS="1"
+    fi
+
+    if [ "${CODED_ARM_REFERENCE_DEFAULT:-0}" = "1" ]; then
+      export CODED_KERNEL_BACKEND="arm-portable"
+    else
       case "${CODED_KERNEL_BACKEND:-}" in
-        ""|"auto"|"scalar")
-          export CODED_KERNEL_BACKEND="arm-portable"
+        ""|"auto"|"arm-portable")
+          export CODED_KERNEL_BACKEND="scalar"
           ;;
       esac
-
-      if ! printf "%s" "${THREADS:-}" | grep -Eq '^[1-9][0-9]*$'; then
-        export THREADS="1"
-      fi
-
-      if [ "${THREADS:-0}" -le 0 ] 2>/dev/null; then
-        export THREADS="1"
-      fi
-
-      export CODED_THREADS="$THREADS"
-      export COMMAND_THREADS="$THREADS"
     fi
+
+    export CODED_THREADS="$THREADS"
+    export COMMAND_THREADS="$THREADS"
   fi
 
   echo "[CODED] public defaults: builder=$CODED_BUILDER external_build_agent=$CODED_EXTERNAL_BUILD_AGENT release_ready=$CODED_RELEASE_BUILD_READY runtime=$CODED_RUNTIME_MODE backend=${CODED_KERNEL_BACKEND:-auto} threads=${THREADS:-auto}"
@@ -1447,7 +1451,7 @@ fi
   # Fix: earlier defaults may already set backend=scalar and threads=0/12.
   # For public ARM reference mode, scalar/auto/empty becomes arm-portable and invalid/empty/0 threads become 1.
   if [ "${CODED_PLATFORM:-}" = "macos-arm64" ]; then
-    export CODED_ARM_REFERENCE_DEFAULT="${CODED_ARM_REFERENCE_DEFAULT:-1}"
+    export CODED_ARM_REFERENCE_DEFAULT="${CODED_ARM_REFERENCE_DEFAULT:-0}"
 
     if [ "${CODED_ARM_REFERENCE_DEFAULT:-1}" = "1" ]; then
       case "${CODED_KERNEL_BACKEND:-}" in
