@@ -1310,6 +1310,18 @@ fi
 
   start_external_fleet_heartbeat
   coded_external_build_agent_loop
+  # M10.99Z268I_ARM_REFERENCE_DEFAULTS
+  # Public macOS ARM default: correctness/reference backend first.
+  # Users can override these env vars explicitly.
+  if [ "${CODED_PLATFORM:-}" = "macos-arm64" ]; then
+    export CODED_KERNEL_BACKEND="${CODED_KERNEL_BACKEND:-arm-portable}"
+    export THREADS="${THREADS:-1}"
+    export COMMAND_THREADS="${COMMAND_THREADS:-$THREADS}"
+    export CODED_THREADS="${CODED_THREADS:-$THREADS}"
+    export CODED_ARM_REFERENCE_DEFAULT="${CODED_ARM_REFERENCE_DEFAULT:-1}"
+    echo "[CODED] macOS ARM reference defaults: backend=$CODED_KERNEL_BACKEND threads=$THREADS"
+  fi
+
   if [ "${CODED_PLATFORM:-}" = "macos-x86_64" ]; then
   echo "[CODED] Using native macOS Intel x86_64 build"
 else
