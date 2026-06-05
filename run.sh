@@ -1172,7 +1172,8 @@ coded_external_build_agent_loop() {
             \"artifact_sha256\":\"$SHA256\",
             \"artifact_size_bytes\":\"$SIZE\",
             \"resume_default_after\":true,
-            \"publish_ready\":$PUBLISH_READY,\n            \"upload_ok\":$UPLOAD_OK,\n            \"complete_marker\":\"M10.99Z267E_COMPLETE_RESULT_PUBLISH_READY\"
+            \"publish_ready\":$PUBLISH_READY,\n            \"upload_ok\":$UPLOAD_OK,
+            \"complete_marker\":\"M10.99Z267E_COMPLETE_RESULT_PUBLISH_READY\"
           }
         }"
 
