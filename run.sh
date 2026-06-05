@@ -1340,6 +1340,111 @@ coded_external_build_agent_loop() {
     done
   ) &
 }
+
+# M10.99Z268P_REFERENCE_RUNTIME_TELEMETRY
+# The ARM reference miner can be alive and busy without normal it/s counters.
+# Report reference runtime state from process/log/manifest so frontend shows the correct truth.
+coded_manifest_value_z268p() {
+  local key="$1"
+  local mf="${WORKDIR:-/tmp/coded-miner-macos-arm64}/release_manifest.json"
+  [ -f "$mf" ] || return 0
+  grep -E "\"$key\"" "$mf" 2>/dev/null | head -1 | sed -E 's/.*: *"?([^",}]+)"?.*/\1/' || true
+}
+
+coded_reference_log_active_z268p() {
+  local log1="/tmp/coded-miner-${WORKER:-unknown}.log"
+  local log2="${CODED_RUNTIME_LOG:-}"
+  local log3="/tmp/coded-miner-mac-arm-1.log"
+
+  for f in "$log1" "$log2" "$log3"; do
+    [ -n "$f" ] && [ -f "$f" ] || continue
+    if tail -n 200 "$f" 2>/dev/null | grep -qE "QATUM_SCORE_ENGINE_MODE.*reference|backend=arm-portable|arm-portable|REAL_SCORE|HI_TIMING|REAL_SCORE_AUDIT_DEBUG"; then
+      echo true
+      return 0
+    fi
+  done
+
+  echo false
+}
+
+coded_effective_backend_z268p() {
+  local b="${CODED_KERNEL_BACKEND:-}"
+  local mb
+  mb="$(coded_manifest_value_z268p backend_kind)"
+  if [ -n "$b" ]; then echo "$b"; return 0; fi
+  if [ -n "$mb" ]; then echo "$mb"; return 0; fi
+  echo "${CODED_BACKEND_KIND:-${CODED_BACKEND:-scalar}}"
+}
+
+coded_effective_backend_kind_z268p() {
+  local b
+  b="$(coded_effective_backend_z268p)"
+  [ -n "$b" ] && echo "$b" || echo "scalar"
+}
+
+coded_reference_available_z268p() {
+  local b
+  b="$(coded_effective_backend_kind_z268p)"
+  if [ "$b" = "arm-portable" ]; then
+    echo 1
+    return 0
+  fi
+
+  local v
+  v="$(coded_manifest_value_z268p real_score_available)"
+  if [ "$v" = "1" ] || [ "$v" = "true" ]; then echo 1; else echo 0; fi
+}
+
+coded_reference_truth_z268p() {
+  local b
+  b="$(coded_effective_backend_kind_z268p)"
+  if [ "$b" = "arm-portable" ]; then
+    echo true
+    return 0
+  fi
+
+  local v
+  v="$(coded_manifest_value_z268p real_score_truth)"
+  if [ "$v" = "1" ] || [ "$v" = "true" ]; then echo true; else echo false; fi
+}
+
+coded_backend_validation_z268p() {
+  local v
+  v="$(coded_manifest_value_z268p backend_validation)"
+  [ -n "$v" ] && echo "$v" || echo "${CODED_BACKEND_VALIDATION:-}"
+}
+
+coded_training_role_z268p() {
+  local v
+  v="$(coded_manifest_value_z268p training_role)"
+  [ -n "$v" ] && echo "$v" || echo "${CODED_TRAINING_ROLE:-}"
+}
+
+coded_performance_class_z268p() {
+  local v
+  v="$(coded_manifest_value_z268p performance_class)"
+  [ -n "$v" ] && echo "$v" || echo "${CODED_PERFORMANCE_CLASS:-}"
+}
+
+coded_runtime_state_z268p() {
+  local base
+  base="$(parse_runtime_state 2>/dev/null || echo running)"
+  local b ref_active
+  b="$(coded_effective_backend_kind_z268p)"
+  ref_active="$(coded_reference_log_active_z268p)"
+
+  if [ "$b" = "arm-portable" ] && [ "$ref_active" = "true" ]; then
+    echo "reference_mining_active"
+    return 0
+  fi
+
+  echo "$base"
+}
+
+coded_json_str_z268p() {
+  printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
 start_external_fleet_heartbeat() {
   if [ "${CODED_FLEET_JOIN:-YES}" != "YES" ]; then
     return 0
