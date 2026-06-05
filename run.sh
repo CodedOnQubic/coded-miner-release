@@ -1137,9 +1137,28 @@ coded_external_build_agent_loop() {
         VERSION="$(printf "%s" "$RESP" | coded_z265a_json_get "command.params.version")"
         ARTIFACT_NAME="$(printf "%s" "$RESP" | coded_z265a_json_get "command.params.artifact_name")"
 
-        # M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD
-        # Stub artifacts are uploaded for handoff validation but remain publish_ready=false.
-        coded_z266b_upload_artifact_to_primary "$CMD_ID" "$ARTIFACT_PATH" "$TARGET" "$VERSION" "$ARTIFACT_NAME" "$SHA256" "$PUBLISH_READY" || true
+        # M10.99Z267D_STRICT_REAL_ARM_UPLOAD_BEFORE_COMPLETE
+        # Real publishable ARM builds must not complete unless Primary artifact upload succeeds.
+        UPLOAD_OK="false"
+        if coded_z266b_upload_artifact_to_primary "$CMD_ID" "$ARTIFACT_PATH" "$TARGET" "$VERSION" "$ARTIFACT_NAME" "$SHA256" "$PUBLISH_READY"; then
+          UPLOAD_OK="true"
+        fi
+
+        if [ "$PUBLISH_READY" = "true" ] && [ "$UPLOAD_OK" != "true" ]; then
+          coded_z265a_post_json "/fleet/external-build/$CMD_ID/fail" "{
+            \"error\":\"Z267D real ARM artifact upload to Primary failed\",
+            \"result\":{
+              \"marker\":\"M10.99Z267D_STRICT_REAL_ARM_UPLOAD_BEFORE_COMPLETE\",
+              \"status\":\"real_arm_upload_failed\",
+              \"device_id\":\"$DEVICE_ID\",
+              \"worker\":\"${WORKER:-unknown}\",
+              \"target\":\"$TARGET\",
+              \"artifact_path\":\"$ARTIFACT_PATH\",
+              \"artifact_sha256\":\"$SHA256\"
+            }
+          }" || true
+          continue
+        fi
 
         coded_z265a_post_json "/fleet/external-build/$CMD_ID/complete" "{
           \"result\":{
