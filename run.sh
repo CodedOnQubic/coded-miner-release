@@ -1311,15 +1311,38 @@ fi
   start_external_fleet_heartbeat
   coded_external_build_agent_loop
   # M10.99Z268I_ARM_REFERENCE_DEFAULTS
+  # M10.99Z268J_HARD_ARM_REFERENCE_DEFAULTS
   # Public macOS ARM default: correctness/reference backend first.
-  # Users can override these env vars explicitly.
+  # Fix: earlier defaults may already set backend=scalar and threads=0/12.
+  # For public ARM reference mode, scalar/auto/empty becomes arm-portable and invalid/empty/0 threads become 1.
   if [ "${CODED_PLATFORM:-}" = "macos-arm64" ]; then
-    export CODED_KERNEL_BACKEND="${CODED_KERNEL_BACKEND:-arm-portable}"
-    export THREADS="${THREADS:-1}"
-    export COMMAND_THREADS="${COMMAND_THREADS:-$THREADS}"
-    export CODED_THREADS="${CODED_THREADS:-$THREADS}"
     export CODED_ARM_REFERENCE_DEFAULT="${CODED_ARM_REFERENCE_DEFAULT:-1}"
-    echo "[CODED] macOS ARM reference defaults: backend=$CODED_KERNEL_BACKEND threads=$THREADS"
+
+    if [ "${CODED_ARM_REFERENCE_DEFAULT:-1}" = "1" ]; then
+      case "${CODED_KERNEL_BACKEND:-}" in
+        ""|"auto"|"scalar")
+          export CODED_KERNEL_BACKEND="arm-portable"
+          ;;
+      esac
+
+      if ! printf "%s" "${THREADS:-}" | grep -Eq '^[1-9][0-9]*$'; then
+        export THREADS="1"
+      fi
+
+      if [ "${THREADS:-0}" -le 0 ] 2>/dev/null; then
+        export THREADS="1"
+      fi
+
+      export COMMAND_THREADS="$THREADS"
+      export CODED_THREADS="$THREADS"
+    else
+      export CODED_KERNEL_BACKEND="${CODED_KERNEL_BACKEND:-arm-portable}"
+      export THREADS="${THREADS:-1}"
+      export COMMAND_THREADS="${COMMAND_THREADS:-$THREADS}"
+      export CODED_THREADS="${CODED_THREADS:-$THREADS}"
+    fi
+
+    echo "[CODED] macOS ARM reference defaults: backend=$CODED_KERNEL_BACKEND threads=$THREADS reference_default=$CODED_ARM_REFERENCE_DEFAULT"
   fi
 
   if [ "${CODED_PLATFORM:-}" = "macos-x86_64" ]; then
