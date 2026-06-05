@@ -112,6 +112,83 @@ export CODED_RELEASE_BASE_URL="${CODED_RELEASE_BASE_URL:-https://raw.githubuserc
 export CODED_LATEST_MACOS_ARM64_URL="${CODED_LATEST_MACOS_ARM64_URL:-$CODED_RELEASE_BASE_URL/latest-macos-arm64.txt}"
 export CODED_CURRENT_RELEASE_FILE="${CODED_CURRENT_RELEASE_FILE:-}"
 
+# M10.99Z268K_PUBLIC_ONE_LINER_DEFAULTS
+# Public one-liner defaults:
+# - normal users join as default analytics miners
+# - no builder unless CODED_BUILDER is explicitly true
+# - no external build agent unless builder=true or explicitly enabled
+# - macOS ARM uses reference path safely by default
+coded_bool_true_z268k() {
+  case "$(printf "%s" "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    1|yes|y|true|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+coded_bool_false_z268k() {
+  case "$(printf "%s" "${1:-}" | tr '[:upper:]' '[:lower:]')" in
+    0|no|n|false|off) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+coded_apply_public_oneliner_defaults_z268k() {
+  # Default role is miner, not builder.
+  if coded_bool_true_z268k "${CODED_BUILDER:-}"; then
+    export CODED_BUILDER="yes"
+    export CODED_RELEASE_BUILD_READY="${CODED_RELEASE_BUILD_READY:-1}"
+    export CODED_EXTERNAL_BUILD_AGENT="${CODED_EXTERNAL_BUILD_AGENT:-YES}"
+  else
+    export CODED_BUILDER="no"
+    export CODED_BUILDER_TARGETS=""
+    export CODED_RELEASE_BUILD_READY="0"
+    export CODED_EXTERNAL_BUILD_AGENT="${CODED_EXTERNAL_BUILD_AGENT:-NO}"
+  fi
+
+  # Explicit false always wins.
+  if coded_bool_false_z268k "${CODED_EXTERNAL_BUILD_AGENT:-}"; then
+    export CODED_EXTERNAL_BUILD_AGENT="NO"
+  fi
+
+  if coded_bool_false_z268k "${CODED_RELEASE_BUILD_READY:-}"; then
+    export CODED_RELEASE_BUILD_READY="0"
+  fi
+
+  # Default runtime mode.
+  export CODED_RUNTIME_MODE="${CODED_RUNTIME_MODE:-default_analytics}"
+  export CODED_COMMAND_MODE="${CODED_COMMAND_MODE:-default_analytics}"
+  export CODED_DEVICE_ROLE="${CODED_DEVICE_ROLE:-default_analytics}"
+
+  # Auto-update should be on for normal public one-liner unless explicitly disabled.
+  export CODED_SELF_UPDATE_SUPERVISOR="${CODED_SELF_UPDATE_SUPERVISOR:-1}"
+
+  # macOS ARM public safe default: reference backend, 1 thread.
+  if [ "${CODED_PLATFORM:-}" = "macos-arm64" ]; then
+    export CODED_ARM_REFERENCE_DEFAULT="${CODED_ARM_REFERENCE_DEFAULT:-1}"
+    if [ "${CODED_ARM_REFERENCE_DEFAULT:-1}" = "1" ]; then
+      case "${CODED_KERNEL_BACKEND:-}" in
+        ""|"auto"|"scalar")
+          export CODED_KERNEL_BACKEND="arm-portable"
+          ;;
+      esac
+
+      if ! printf "%s" "${THREADS:-}" | grep -Eq '^[1-9][0-9]*$'; then
+        export THREADS="1"
+      fi
+
+      if [ "${THREADS:-0}" -le 0 ] 2>/dev/null; then
+        export THREADS="1"
+      fi
+
+      export CODED_THREADS="$THREADS"
+      export COMMAND_THREADS="$THREADS"
+    fi
+  fi
+
+  echo "[CODED] public defaults: builder=$CODED_BUILDER external_build_agent=$CODED_EXTERNAL_BUILD_AGENT release_ready=$CODED_RELEASE_BUILD_READY runtime=$CODED_RUNTIME_MODE backend=${CODED_KERNEL_BACKEND:-auto} threads=${THREADS:-auto}"
+}
+
+
 # M10.99Z217B_OUTER_SUPERVISOR_LOOP
 # Parent process for public Mac fleet join.
 # Keeps foreign Macs alive and auto-updated without manual restart.
@@ -1061,7 +1138,11 @@ EOF
 }
 
 coded_external_build_agent_loop() {
-  if [ "${CODED_EXTERNAL_BUILD_AGENT:-YES}" != "YES" ]; then
+  # M10.99Z268K_PUBLIC_ONE_LINER_DEFAULTS
+  if coded_bool_false_z268k "${CODED_EXTERNAL_BUILD_AGENT:-NO}"; then
+    return 0
+  fi
+  if ! coded_bool_true_z268k "${CODED_EXTERNAL_BUILD_AGENT:-NO}"; then
     return 0
   fi
 
@@ -1308,6 +1389,7 @@ if [ -z "${CODED_CURRENT_RELEASE_FILE:-}" ]; then
   export CODED_CURRENT_RELEASE_FILE
 fi
 
+  coded_apply_public_oneliner_defaults_z268k
   start_external_fleet_heartbeat
   coded_external_build_agent_loop
   # M10.99Z268I_ARM_REFERENCE_DEFAULTS
