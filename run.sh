@@ -772,6 +772,55 @@ coded_z265a_post_json() {
   return 0
 }
 
+
+# M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD
+coded_z266b_upload_artifact_to_primary() {
+  local cmd_id="$1"
+  local artifact_path="$2"
+  local target="$3"
+  local version="$4"
+  local artifact_name="$5"
+  local sha256="$6"
+  local publish_ready="${7:-false}"
+
+  if [ -z "$cmd_id" ] || [ -z "$artifact_path" ] || [ ! -f "$artifact_path" ]; then
+    echo "[M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD] skip missing artifact cmd=$cmd_id path=$artifact_path"
+    return 1
+  fi
+
+  local b64 payload tmp_payload code out
+  b64="$(base64 < "$artifact_path" | tr -d '\n')"
+  tmp_payload="/tmp/coded-z266b-upload-${cmd_id}.json"
+
+  cat > "$tmp_payload" <<EOF
+{
+  "target":"$target",
+  "version":"$version",
+  "artifact_name":"$artifact_name",
+  "artifact_sha256":"$sha256",
+  "publish_ready":$publish_ready,
+  "artifact_base64":"$b64"
+}
+EOF
+
+  out="$(curl -sS -w "\nHTTP_CODE:%{http_code}" -X POST "$API_URL/fleet/external-build/$cmd_id/artifact" \
+    -H "Content-Type: application/json" \
+    --data-binary "@$tmp_payload" 2>&1 || true)"
+
+  code="$(printf "%s\n" "$out" | grep 'HTTP_CODE:' | tail -1 | cut -d: -f2 || true)"
+  out="$(printf "%s\n" "$out" | sed '/HTTP_CODE:/d' || true)"
+
+  rm -f "$tmp_payload" >/dev/null 2>&1 || true
+
+  if [ "$code" != "200" ] && [ "$code" != "201" ]; then
+    echo "[M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD] upload failed cmd=$cmd_id http=$code response=$out"
+    return 1
+  fi
+
+  echo "[M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD] upload ok cmd=$cmd_id http=$code"
+  return 0
+}
+
 coded_z265a_make_stub_artifact() {
   local cmd_json="$1"
   local command_id version target artifact_name out_dir payload_dir artifact_path manifest_path expected_commit
@@ -891,9 +940,17 @@ coded_external_build_agent_loop() {
         SHA256="$(shasum -a 256 "$ARTIFACT_PATH" 2>/dev/null | awk '{print $1}' || true)"
         SIZE="$(wc -c < "$ARTIFACT_PATH" 2>/dev/null | tr -d ' ' || true)"
 
+        VERSION="$(printf "%s" "$RESP" | coded_z265a_json_get "command.params.version")"
+        ARTIFACT_NAME="$(printf "%s" "$RESP" | coded_z265a_json_get "command.params.artifact_name")"
+
+        # M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD
+        # Stub artifacts are uploaded for handoff validation but remain publish_ready=false.
+        coded_z266b_upload_artifact_to_primary "$CMD_ID" "$ARTIFACT_PATH" "$TARGET" "$VERSION" "$ARTIFACT_NAME" "$SHA256" "false" || true
+
         coded_z265a_post_json "/fleet/external-build/$CMD_ID/complete" "{
           \"result\":{
             \"marker\":\"M10.99Z265B_EXTERNAL_BUILD_AGENT_STUB_COMPLETED\",
+            \"handoff_marker\":\"M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD\",
             \"status\":\"stub_build_completed\",
             \"device_id\":\"$DEVICE_ID\",
             \"worker\":\"${WORKER:-unknown}\",
