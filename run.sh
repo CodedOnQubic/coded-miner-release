@@ -1317,21 +1317,25 @@ else
 fi
 
   WORKDIR="/tmp/coded-miner-macos-arm64"
-  # M10.99Z201_VERSIONED_MACOS_ARM_ARTIFACT
-  # Prefer a versioned artifact name to avoid GitHub Raw/CDN stale binary cache.
-  ARTIFACT="$(curl -fsSL "$BASE_URL/latest-macos-arm64.txt" 2>/dev/null || echo coded-miner-macos-arm64.tar.gz)"
 
   rm -rf "$WORKDIR"
   mkdir -p "$WORKDIR"
 
-  curl -L -o /tmp/$ARTIFACT "$BASE_URL/$ARTIFACT"
+  # M10.99Z268H3_ARM_INSTALL_RELEASE_LATEST_DIRECT
+  # macOS ARM must install the GitHub Release latest asset, not raw/main latest-macos-arm64.txt.
+  DOWNLOAD_URL="$(coded_download_url_for_current_platform)"
+  echo "[CODED] macOS ARM release download url: $DOWNLOAD_URL"
+  curl -fL -o "$WORKDIR/coded-miner.tar.gz" "$DOWNLOAD_URL"
 
-# M10.99Z221F_DOWNLOAD_URL_SELECT
-DOWNLOAD_URL="$(coded_download_url_for_current_platform)"
-  tar -xzf /tmp/$ARTIFACT -C "$WORKDIR"
+  tar -xzf "$WORKDIR/coded-miner.tar.gz" -C "$WORKDIR"
   # M10.99Z217A_START_SELF_UPDATE_WATCHDOG
   start_self_update_watchdog
   chmod +x "$WORKDIR/coded-miner"
+
+  if [ -f "$WORKDIR/release_manifest.json" ]; then
+    echo "[CODED] macOS ARM installed manifest:"
+    cat "$WORKDIR/release_manifest.json" | sed -n '1,100p'
+  fi
 
   CODED_ANALYTICS="$CODED_ANALYTICS" \
   CODED_FLEET_JOIN="$CODED_FLEET_JOIN" \
