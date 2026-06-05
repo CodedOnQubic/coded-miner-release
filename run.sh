@@ -858,10 +858,14 @@ coded_download_url_for_current_platform() {
     return 0
   fi
 
-  # M10.99Z268G2_ARM_RELEASE_LATEST_DOWNLOAD_URL
-  # macOS ARM must consume the GitHub Release latest asset produced by Primary publisher,
-  # not the raw main branch file.
-  echo "${CODED_MACOS_ARM64_TARBALL_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz}"
+  # M10.99Z268N_SPLIT_PUBLIC_ARM_STABLE_REFERENCE_CHANNELS
+  # Public macOS ARM one-liner must use the stable scalar artifact.
+  # Reference/RealScore channel is opt-in via CODED_ARM_REFERENCE_DEFAULT=1.
+  if [ "${CODED_ARM_REFERENCE_DEFAULT:-0}" = "1" ]; then
+    echo "${CODED_MACOS_ARM64_REFERENCE_TARBALL_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz}"
+  else
+    echo "${CODED_MACOS_ARM64_TARBALL_URL:-https://github.com/CodedOnQubic/coded-miner-release/raw/main/coded-miner-macos-arm64.tar.gz}"
+  fi
 }
 
 
@@ -1453,7 +1457,7 @@ fi
   if [ "${CODED_PLATFORM:-}" = "macos-arm64" ]; then
     export CODED_ARM_REFERENCE_DEFAULT="${CODED_ARM_REFERENCE_DEFAULT:-0}"
 
-    if [ "${CODED_ARM_REFERENCE_DEFAULT:-1}" = "1" ]; then
+    if [ "${CODED_ARM_REFERENCE_DEFAULT:-0}" = "1" ]; then
       case "${CODED_KERNEL_BACKEND:-}" in
         ""|"auto"|"scalar")
           export CODED_KERNEL_BACKEND="arm-portable"
