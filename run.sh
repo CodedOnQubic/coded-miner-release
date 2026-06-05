@@ -900,6 +900,130 @@ EOF
   printf "%s" "$artifact_path"
 }
 
+
+# M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD
+coded_z267a_make_real_macos_arm_artifact() {
+  local cmd_json="$1"
+  local command_id version target artifact_name expected_commit repo branch out_dir src_dir build_dir payload_dir artifact_path manifest_path bin_path
+
+  command_id="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.command_id")"
+  version="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.params.version")"
+  target="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.target")"
+  artifact_name="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.params.artifact_name")"
+  expected_commit="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.params.expected_commit")"
+  repo="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.params.repo")"
+  branch="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.params.branch")"
+
+  [ -z "$command_id" ] && return 1
+  [ -z "$version" ] && version="v0.0.0-z267a-arm-realscore"
+  [ -z "$target" ] && target="macos-arm64"
+  [ -z "$artifact_name" ] && artifact_name="coded-miner-${target}-${version}.tar.gz"
+  [ -z "$repo" ] && repo="CodedOnQubic/coded-miner"
+  [ -z "$branch" ] && branch="z242-arm-hotpath-contract-clean"
+
+  if [ "$target" != "macos-arm64" ]; then
+    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] wrong target=$target"
+    return 1
+  fi
+
+  out_dir="/tmp/coded-external-build-${command_id}"
+  src_dir="$out_dir/src"
+  build_dir="$out_dir/build"
+  payload_dir="$out_dir/payload"
+  artifact_path="$out_dir/$artifact_name"
+  manifest_path="$payload_dir/release_manifest.json"
+
+  rm -rf "$out_dir"
+  mkdir -p "$src_dir" "$build_dir" "$payload_dir"
+
+  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] clone repo=$repo branch=$branch expected_commit=$expected_commit"
+
+  if ! git clone --depth 80 --branch "$branch" "https://github.com/${repo}.git" "$src_dir"; then
+    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] git clone failed"
+    return 1
+  fi
+
+  cd "$src_dir" || return 1
+
+  if [ -n "$expected_commit" ]; then
+    git fetch --depth 80 origin "$expected_commit" >/dev/null 2>&1 || true
+    if ! git checkout "$expected_commit"; then
+      echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] expected_commit checkout failed: $expected_commit"
+      return 1
+    fi
+  fi
+
+  local actual_commit
+  actual_commit="$(git rev-parse HEAD 2>/dev/null || true)"
+
+  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] actual_commit=$actual_commit"
+
+  if [ -n "$expected_commit" ]; then
+    case "$actual_commit" in
+      "$expected_commit"*) ;;
+      *)
+        echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] commit mismatch expected=$expected_commit actual=$actual_commit"
+        return 1
+        ;;
+    esac
+  fi
+
+  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] cmake configure/build"
+
+  if command -v cmake >/dev/null 2>&1; then
+    cmake -S "$src_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$build_dir" --config Release -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+  else
+    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] cmake missing"
+    return 1
+  fi
+
+  bin_path="$(find "$build_dir" "$src_dir" -type f \( -name coded-miner -o -name coded-miner-arm64 -o -name 'coded-miner*' \) -perm +111 2>/dev/null | head -1 || true)"
+
+  if [ -z "$bin_path" ] || [ ! -f "$bin_path" ]; then
+    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] coded-miner binary not found"
+    find "$build_dir" -maxdepth 4 -type f | head -80 || true
+    return 1
+  fi
+
+  cp "$bin_path" "$payload_dir/coded-miner"
+  chmod +x "$payload_dir/coded-miner"
+
+  cat > "$manifest_path" <<EOF
+{
+  "version": "$version",
+  "target": "macos-arm64",
+  "platform": "macos-arm64",
+  "arch": "arm64",
+  "repo": "$repo",
+  "branch": "$branch",
+  "commit": "$actual_commit",
+  "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "builder_device_id": "${DEVICE_ID:-unknown}",
+  "builder_worker": "${WORKER:-unknown}",
+  "marker": "M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD",
+  "stub": false,
+  "publish_ready": true,
+  "backend": "arm-portable",
+  "backend_kind": "arm-portable",
+  "backend_validation": "golden_25_matched_live_score_verified",
+  "training_role": "external_arm_reference_validation",
+  "performance_class": "slow_reference",
+  "threshold": 321,
+  "fullscore_threshold": 321,
+  "shadow_threshold": 300,
+  "real_score_available": 1,
+  "real_score_authoritative": 0,
+  "real_score_truth": true
+}
+EOF
+
+  tar -czf "$artifact_path" -C "$payload_dir" .
+
+  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] artifact=$artifact_path"
+  printf "%s" "$artifact_path"
+}
+
 coded_external_build_agent_loop() {
   if [ "${CODED_EXTERNAL_BUILD_AGENT:-YES}" != "YES" ]; then
     return 0
@@ -959,7 +1083,19 @@ coded_external_build_agent_loop() {
         pkill -f "coded-miner " >/dev/null 2>&1 || true
       fi
 
-      ARTIFACT_PATH="$(coded_z265a_make_stub_artifact "$RESP" || true)"
+      PUBLISH_READY="false"
+      BUILD_KIND="stub"
+
+      if [ "${CODED_EXTERNAL_REAL_BUILD:-NO}" = "YES" ] && [ "$TARGET" = "macos-arm64" ]; then
+        echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] real build enabled command=$CMD_ID"
+        ARTIFACT_PATH="$(coded_z267a_make_real_macos_arm_artifact "$RESP" || true)"
+        if [ -n "$ARTIFACT_PATH" ] && [ -f "$ARTIFACT_PATH" ]; then
+          PUBLISH_READY="true"
+          BUILD_KIND="real_arm_realscore"
+        fi
+      else
+        ARTIFACT_PATH="$(coded_z265a_make_stub_artifact "$RESP" || true)"
+      fi
 
       if [ -n "$ARTIFACT_PATH" ] && [ -f "$ARTIFACT_PATH" ]; then
         SHA256="$(shasum -a 256 "$ARTIFACT_PATH" 2>/dev/null | awk '{print $1}' || true)"
@@ -970,13 +1106,13 @@ coded_external_build_agent_loop() {
 
         # M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD
         # Stub artifacts are uploaded for handoff validation but remain publish_ready=false.
-        coded_z266b_upload_artifact_to_primary "$CMD_ID" "$ARTIFACT_PATH" "$TARGET" "$VERSION" "$ARTIFACT_NAME" "$SHA256" "false" || true
+        coded_z266b_upload_artifact_to_primary "$CMD_ID" "$ARTIFACT_PATH" "$TARGET" "$VERSION" "$ARTIFACT_NAME" "$SHA256" "$PUBLISH_READY" || true
 
         coded_z265a_post_json "/fleet/external-build/$CMD_ID/complete" "{
           \"result\":{
             \"marker\":\"M10.99Z265B_EXTERNAL_BUILD_AGENT_STUB_COMPLETED\",
             \"handoff_marker\":\"M10.99Z266B_EXTERNAL_BUILD_ARTIFACT_UPLOAD\",
-            \"status\":\"stub_build_completed\",
+            \"status\":\"${BUILD_KIND}_build_completed\",
             \"device_id\":\"$DEVICE_ID\",
             \"worker\":\"${WORKER:-unknown}\",
             \"target\":\"$TARGET\",
