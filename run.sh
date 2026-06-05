@@ -902,6 +902,8 @@ EOF
 
 
 # M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD
+# M10.99Z267C_STDOUT_CLEAN_REAL_ARM_ARTIFACT_PATH
+# IMPORTANT: this function is called via command substitution. Only final artifact path may go to stdout.
 coded_z267a_make_real_macos_arm_artifact() {
   local cmd_json="$1"
   local command_id version target artifact_name expected_commit repo branch out_dir src_dir build_dir payload_dir artifact_path manifest_path bin_path
@@ -922,7 +924,7 @@ coded_z267a_make_real_macos_arm_artifact() {
   [ -z "$branch" ] && branch="z242-arm-hotpath-contract-clean"
 
   if [ "$target" != "macos-arm64" ]; then
-    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] wrong target=$target"
+    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] wrong target=$target" >&2
     return 1
   fi
 
@@ -936,10 +938,10 @@ coded_z267a_make_real_macos_arm_artifact() {
   rm -rf "$out_dir"
   mkdir -p "$src_dir" "$build_dir" "$payload_dir"
 
-  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] clone repo=$repo branch=$branch expected_commit=$expected_commit"
+  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] clone repo=$repo branch=$branch expected_commit=$expected_commit" >&2
 
   if ! git clone --depth 80 --branch "$branch" "https://github.com/${repo}.git" "$src_dir"; then
-    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] git clone failed"
+    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] git clone failed" >&2
     return 1
   fi
 
@@ -948,7 +950,7 @@ coded_z267a_make_real_macos_arm_artifact() {
   if [ -n "$expected_commit" ]; then
     git fetch --depth 80 origin "$expected_commit" >/dev/null 2>&1 || true
     if ! git checkout "$expected_commit"; then
-      echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] expected_commit checkout failed: $expected_commit"
+      echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] expected_commit checkout failed: $expected_commit" >&2
       return 1
     fi
   fi
@@ -956,25 +958,25 @@ coded_z267a_make_real_macos_arm_artifact() {
   local actual_commit
   actual_commit="$(git rev-parse HEAD 2>/dev/null || true)"
 
-  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] actual_commit=$actual_commit"
+  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] actual_commit=$actual_commit" >&2
 
   if [ -n "$expected_commit" ]; then
     case "$actual_commit" in
       "$expected_commit"*) ;;
       *)
-        echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] commit mismatch expected=$expected_commit actual=$actual_commit"
+        echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] commit mismatch expected=$expected_commit actual=$actual_commit" >&2
         return 1
         ;;
     esac
   fi
 
-  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] cmake configure/build"
+  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] cmake configure/build" >&2
 
   if command -v cmake >/dev/null 2>&1; then
-    cmake -S "$src_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release
-    cmake --build "$build_dir" --config Release -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)"
+    cmake -S "$src_dir" -B "$build_dir" -DCMAKE_BUILD_TYPE=Release >&2
+    cmake --build "$build_dir" --config Release -j "$(sysctl -n hw.ncpu 2>/dev/null || echo 4)" >&2
   else
-    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] cmake missing"
+    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] cmake missing" >&2
     return 1
   fi
 
@@ -1001,21 +1003,21 @@ coded_z267a_make_real_macos_arm_artifact() {
   fi
 
   if [ -z "$bin_path" ] || [ ! -f "$bin_path" ]; then
-    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] coded-miner binary not found"
-    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] build_dir=$build_dir src_dir=$src_dir"
-    find "$build_dir" -maxdepth 5 -type f | sed -n '1,120p' || true
+    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] coded-miner binary not found" >&2
+    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] build_dir=$build_dir src_dir=$src_dir" >&2
+    find "$build_dir" -maxdepth 5 -type f | sed -n '1,120p' >&2 || true
     return 1
   fi
 
   chmod +x "$bin_path" >/dev/null 2>&1 || true
 
   if [ ! -x "$bin_path" ]; then
-    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] binary exists but is not executable: $bin_path"
-    ls -lah "$bin_path" || true
+    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] binary exists but is not executable: $bin_path" >&2
+    ls -lah "$bin_path" >&2 || true
     return 1
   fi
 
-  echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] binary=$bin_path"
+  echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] binary=$bin_path" >&2
 
   cp "$bin_path" "$payload_dir/coded-miner"
   chmod +x "$payload_dir/coded-miner"
@@ -1051,7 +1053,7 @@ EOF
 
   tar -czf "$artifact_path" -C "$payload_dir" .
 
-  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] artifact=$artifact_path"
+  echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] artifact=$artifact_path" >&2
   printf "%s" "$artifact_path"
 }
 
