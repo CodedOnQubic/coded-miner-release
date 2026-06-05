@@ -1159,6 +1159,29 @@ coded_z267a_make_real_macos_arm_artifact() {
   cp "$bin_path" "$payload_dir/coded-miner"
   chmod +x "$payload_dir/coded-miner"
 
+  # M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER
+  # Package the ARM reference log uploader with the artifact.
+  # Build source may contain it at repo root or under scripts/.
+  uploader_src=""
+  for candidate in \
+    "$src_dir/coded_mac_arm_log_uploader.py" \
+    "$src_dir/scripts/coded_mac_arm_log_uploader.py" \
+    "$src_dir/tools/coded_mac_arm_log_uploader.py"
+  do
+    if [ -f "$candidate" ]; then
+      uploader_src="$candidate"
+      break
+    fi
+  done
+
+  if [ -n "$uploader_src" ]; then
+    cp "$uploader_src" "$payload_dir/coded_mac_arm_log_uploader.py"
+    chmod +x "$payload_dir/coded_mac_arm_log_uploader.py" >/dev/null 2>&1 || true
+    echo "[M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER] packaged uploader=$uploader_src" >&2
+  else
+    echo "[M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER] WARNING uploader not found in source repo" >&2
+  fi
+
   cat > "$manifest_path" <<EOF
 {
   "version": "$version",
@@ -1506,6 +1529,65 @@ coded_real_score_truth_z268p3() {
   fi
 }
 
+
+# M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER
+coded_start_mac_arm_reference_uploader_z270a() {
+  if [ "${CODED_PLATFORM:-}" != "macos-arm64" ]; then
+    return 0
+  fi
+
+  # Only the reference channel needs the Python log uploader.
+  if [ "${CODED_ARM_REFERENCE_DEFAULT:-0}" != "1" ]; then
+    return 0
+  fi
+
+  local uploader="$WORKDIR/coded_mac_arm_log_uploader.py"
+  if [ ! -f "$uploader" ]; then
+    echo "[M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER] uploader missing: $uploader"
+    return 0
+  fi
+
+  local log="${CODED_RUNTIME_LOG:-/tmp/coded-miner-${WORKER:-mac-arm}.log}"
+  local uploader_log="${CODED_MAC_ARM_UPLOADER_LOG:-/tmp/coded-mac-arm-uploader-${WORKER:-mac-arm}.log}"
+  local api_root="${CODED_API_ROOT:-${API_URL:-https://api.codedonqubic.com}}"
+  local threshold="${CODED_FULLSCORE_THRESHOLD:-321}"
+  local shadow_threshold="${CODED_FAST_SHADOW_THRESHOLD:-300}"
+
+  mkdir -p "$(dirname "$log")" "$(dirname "$uploader_log")" 2>/dev/null || true
+  touch "$log"
+
+  # Kill old uploader for the same worker only. Do not touch Hive/AVX512.
+  pkill -f "coded_mac_arm_log_uploader.py.*${WORKER:-mac-arm}" 2>/dev/null || true
+
+  echo "[M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER] start uploader worker=${WORKER:-unknown} log=$log api=$api_root"
+
+  CODED_API_ROOT="$api_root" \
+  API_URL="$api_root" \
+  CODED_MAC_LOG="$log" \
+  RIG_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-macos-arm64:${WORKER:-mac-arm}}}" \
+  DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-macos-arm64:${WORKER:-mac-arm}}}" \
+  WORKER_NAME="${WORKER:-mac-arm}" \
+  WALLET="${WALLET:-}" \
+  THREADS="${THREADS:-1}" \
+  CODED_FULLSCORE_THRESHOLD="$threshold" \
+  CODED_FAST_SHADOW_THRESHOLD="$shadow_threshold" \
+  CODED_BACKEND="arm-portable" \
+  CODED_KERNEL_BACKEND="arm-portable" \
+  CODED_BACKEND_KIND="arm-portable" \
+  CODED_BACKEND_SHORT="arm-portable" \
+  CODED_BACKEND_PLATFORM="macos-arm64" \
+  CODED_REAL_SCORE_AVAILABLE="1" \
+  CODED_REAL_SCORE_TRUTH="true" \
+  CODED_REAL_SCORE_AUTHORITATIVE="0" \
+  CODED_BACKEND_VALIDATION="golden_25_matched_live_score_verified" \
+  CODED_TRAINING_ROLE="external_arm_reference_validation" \
+  CODED_PERFORMANCE_CLASS="slow_reference" \
+  python3 "$uploader" >> "$uploader_log" 2>&1 &
+
+  export CODED_MAC_ARM_UPLOADER_PID="$!"
+  echo "[M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER] uploader_pid=$CODED_MAC_ARM_UPLOADER_PID"
+}
+
 start_external_fleet_heartbeat() {
   if [ "${CODED_FLEET_JOIN:-YES}" != "YES" ]; then
     return 0
@@ -1698,6 +1780,27 @@ fi
   CODED_EXPERIMENT_READY="$CODED_EXPERIMENT_READY" \
   CODED_RELEASE_BUILD_READY="$CODED_RELEASE_BUILD_READY" \
   CODED_CAPABILITIES_UPLOAD="$CODED_CAPABILITIES_UPLOAD" \
+  coded_start_mac_arm_reference_uploader_z270a
+
+  # M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER
+  # For ARM reference, the Python uploader owns analytics ingestion from the miner log.
+  # This prevents missing RealScore/Fullscore telemetry and avoids double heartbeat parsing.
+  if [ "${CODED_PLATFORM:-}" = "macos-arm64" ] && [ "${CODED_ARM_REFERENCE_DEFAULT:-0}" = "1" ]; then
+    export CODED_ANALYTICS="NO"
+    export CODED_FLEET_JOIN="NO"
+    export CODED_QATUM_REFERENCE_SCORE="1"
+    export CODED_BACKEND="arm-portable"
+    export CODED_KERNEL_BACKEND="arm-portable"
+    export CODED_FAST_SHADOW_GATE="${CODED_FAST_SHADOW_GATE:-1}"
+    export CODED_FAST_SHADOW_THRESHOLD="${CODED_FAST_SHADOW_THRESHOLD:-300}"
+    export CODED_FAST_SHADOW_AUDIT_RATE="${CODED_FAST_SHADOW_AUDIT_RATE:-1}"
+    export CODED_FAST_SHADOW_SUMMARY_SEC="${CODED_FAST_SHADOW_SUMMARY_SEC:-10}"
+    export CODED_REAL_SCORE_AUDIT_DEBUG="${CODED_REAL_SCORE_AUDIT_DEBUG:-1}"
+    export CODED_HI_TIMING="${CODED_HI_TIMING:-1}"
+    export CODED_PRIORITY_ROUTER="${CODED_PRIORITY_ROUTER:-M1098E}"
+    export CODED_SCORE_MODE="${CODED_SCORE_MODE:-hyperidentity_only}"
+  fi
+
   "$WORKDIR/coded-miner" \
     --pool "$POOL" \
     --wallet "$WALLET" \
