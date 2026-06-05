@@ -1760,6 +1760,26 @@ fi
   start_self_update_watchdog
   chmod +x "$WORKDIR/coded-miner"
 
+  # M10.99Z270C_FIX_UPLOADER_START_PLACEMENT
+  # Configure ARM reference runtime before starting uploader and miner.
+  if [ "${CODED_PLATFORM:-}" = "macos-arm64" ] && [ "${CODED_ARM_REFERENCE_DEFAULT:-0}" = "1" ]; then
+    export CODED_ANALYTICS="NO"
+    export CODED_FLEET_JOIN="NO"
+    export CODED_QATUM_REFERENCE_SCORE="1"
+    export CODED_BACKEND="arm-portable"
+    export CODED_KERNEL_BACKEND="arm-portable"
+    export CODED_FAST_SHADOW_GATE="${CODED_FAST_SHADOW_GATE:-1}"
+    export CODED_FAST_SHADOW_THRESHOLD="${CODED_FAST_SHADOW_THRESHOLD:-300}"
+    export CODED_FAST_SHADOW_AUDIT_RATE="${CODED_FAST_SHADOW_AUDIT_RATE:-1}"
+    export CODED_FAST_SHADOW_SUMMARY_SEC="${CODED_FAST_SHADOW_SUMMARY_SEC:-10}"
+    export CODED_REAL_SCORE_AUDIT_DEBUG="${CODED_REAL_SCORE_AUDIT_DEBUG:-1}"
+    export CODED_HI_TIMING="${CODED_HI_TIMING:-1}"
+    export CODED_PRIORITY_ROUTER="${CODED_PRIORITY_ROUTER:-M1098E}"
+    export CODED_SCORE_MODE="${CODED_SCORE_MODE:-hyperidentity_only}"
+  fi
+
+  coded_start_mac_arm_reference_uploader_z270a
+
   if [ -f "$WORKDIR/release_manifest.json" ]; then
     echo "[CODED] macOS ARM installed manifest:"
     cat "$WORKDIR/release_manifest.json" | sed -n '1,100p'
@@ -1780,8 +1800,6 @@ fi
   CODED_EXPERIMENT_READY="$CODED_EXPERIMENT_READY" \
   CODED_RELEASE_BUILD_READY="$CODED_RELEASE_BUILD_READY" \
   CODED_CAPABILITIES_UPLOAD="$CODED_CAPABILITIES_UPLOAD" \
-  coded_start_mac_arm_reference_uploader_z270a
-
   # M10.99Z270A_ARM_REFERENCE_WRAPPER_STARTS_UPLOADER
   # For ARM reference, the Python uploader owns analytics ingestion from the miner log.
   # This prevents missing RealScore/Fullscore telemetry and avoids double heartbeat parsing.
