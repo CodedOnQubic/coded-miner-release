@@ -728,7 +728,10 @@ coded_download_url_for_current_platform() {
     return 0
   fi
 
-  echo "${CODED_MACOS_ARM64_TARBALL_URL:-https://github.com/CodedOnQubic/coded-miner-release/raw/main/coded-miner-macos-arm64.tar.gz}"
+  # M10.99Z268G2_ARM_RELEASE_LATEST_DOWNLOAD_URL
+  # macOS ARM must consume the GitHub Release latest asset produced by Primary publisher,
+  # not the raw main branch file.
+  echo "${CODED_MACOS_ARM64_TARBALL_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz}"
 }
 
 
