@@ -978,13 +978,44 @@ coded_z267a_make_real_macos_arm_artifact() {
     return 1
   fi
 
-  bin_path="$(find "$build_dir" "$src_dir" -type f \( -name coded-miner -o -name coded-miner-arm64 -o -name 'coded-miner*' \) -perm +111 2>/dev/null | head -1 || true)"
+  # M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND
+  # macOS/BSD find can be picky with -perm syntax. Prefer deterministic candidates,
+  # then fall back to name search and chmod validation.
+  bin_path=""
+  for candidate in \
+    "$build_dir/coded-miner" \
+    "$build_dir/src/coded-miner" \
+    "$build_dir/bin/coded-miner" \
+    "$src_dir/coded-miner" \
+    "$src_dir/build/coded-miner" \
+    "$src_dir/build/src/coded-miner"
+  do
+    if [ -f "$candidate" ]; then
+      bin_path="$candidate"
+      break
+    fi
+  done
+
+  if [ -z "$bin_path" ]; then
+    bin_path="$(find "$build_dir" "$src_dir" -type f \( -name coded-miner -o -name coded-miner-arm64 -o -name 'coded-miner*' \) 2>/dev/null | head -1 || true)"
+  fi
 
   if [ -z "$bin_path" ] || [ ! -f "$bin_path" ]; then
-    echo "[M10.99Z267A_EXTERNAL_MAC_ARM_REALSCORE_BUILD] coded-miner binary not found"
-    find "$build_dir" -maxdepth 4 -type f | head -80 || true
+    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] coded-miner binary not found"
+    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] build_dir=$build_dir src_dir=$src_dir"
+    find "$build_dir" -maxdepth 5 -type f | sed -n '1,120p' || true
     return 1
   fi
+
+  chmod +x "$bin_path" >/dev/null 2>&1 || true
+
+  if [ ! -x "$bin_path" ]; then
+    echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] binary exists but is not executable: $bin_path"
+    ls -lah "$bin_path" || true
+    return 1
+  fi
+
+  echo "[M10.99Z267B_ROBUST_REAL_ARM_BINARY_FIND] binary=$bin_path"
 
   cp "$bin_path" "$payload_dir/coded-miner"
   chmod +x "$payload_dir/coded-miner"
