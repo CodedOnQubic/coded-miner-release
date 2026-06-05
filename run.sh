@@ -706,6 +706,196 @@ coded_download_url_for_current_platform() {
   echo "${CODED_MACOS_ARM64_TARBALL_URL:-https://github.com/CodedOnQubic/coded-miner-release/raw/main/coded-miner-macos-arm64.tar.gz}"
 }
 
+
+# M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE
+# External build agent lifecycle stub.
+# Safe contract:
+# - Does not touch Hive start.sh / h-run.sh.
+# - Does not publish artifacts.
+# - Does not replace ARM fullscore backend.
+# - Only validates external builder lifecycle: next -> running -> complete/fail -> default resume.
+coded_z265a_urlencode() {
+  python3 - "$1" <<'PYURL' 2>/dev/null || printf "%s" "$1"
+import sys, urllib.parse
+print(urllib.parse.quote(sys.argv[1], safe=""))
+PYURL
+}
+
+coded_z265a_json_get() {
+  local key="$1"
+  python3 - "$key" <<'PYJSON' 2>/dev/null || true
+import sys, json
+key=sys.argv[1]
+try:
+    j=json.load(sys.stdin)
+    cur=j
+    for part in key.split("."):
+        if isinstance(cur, dict):
+            cur=cur.get(part)
+        else:
+            cur=None
+            break
+    if cur is None:
+        print("")
+    elif isinstance(cur, (dict, list)):
+        print(json.dumps(cur))
+    else:
+        print(str(cur))
+except Exception:
+    print("")
+PYJSON
+}
+
+coded_z265a_post_json() {
+  local path="$1"
+  local body="$2"
+  curl -fsS -X POST "$API_URL$path" \
+    -H "Content-Type: application/json" \
+    -d "$body" >/dev/null 2>&1 || true
+}
+
+coded_z265a_make_stub_artifact() {
+  local cmd_json="$1"
+  local command_id version target artifact_name out_dir payload_dir artifact_path manifest_path expected_commit
+
+  command_id="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.command_id")"
+  version="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.params.version")"
+  target="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.target")"
+  artifact_name="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.params.artifact_name")"
+  expected_commit="$(printf "%s" "$cmd_json" | coded_z265a_json_get "command.params.expected_commit")"
+
+  [ -z "$command_id" ] && return 1
+  [ -z "$version" ] && version="v0.0.0-z265a-stub"
+  [ -z "$target" ] && target="${CODED_TARGET:-unknown}"
+  [ -z "$artifact_name" ] && artifact_name="coded-miner-${target}-${version}.tar.gz"
+
+  out_dir="/tmp/coded-external-build-${command_id}"
+  payload_dir="$out_dir/payload"
+  artifact_path="$out_dir/$artifact_name"
+  manifest_path="$payload_dir/release_manifest.json"
+
+  rm -rf "$out_dir"
+  mkdir -p "$payload_dir"
+
+  cat > "$manifest_path" <<EOF
+{
+  "version": "$version",
+  "target": "$target",
+  "platform": "${CODED_PLATFORM:-unknown}",
+  "arch": "$ARCH",
+  "repo": "CodedOnQubic/coded-miner",
+  "branch": "main",
+  "commit": "$expected_commit",
+  "built_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "builder_device_id": "${DEVICE_ID:-unknown}",
+  "builder_worker": "${WORKER:-unknown}",
+  "marker": "M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE",
+  "stub": true,
+  "publish_ready": false
+}
+EOF
+
+  cat > "$payload_dir/README_Z265A_STUB.txt" <<EOF
+M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE
+
+This artifact validates the external Fleet builder lifecycle only.
+It is not a production miner artifact.
+It must not replace the real ARM fullscore backend artifact.
+EOF
+
+  tar -czf "$artifact_path" -C "$payload_dir" .
+
+  printf "%s" "$artifact_path"
+}
+
+coded_external_build_agent_loop() {
+  if [ "${CODED_EXTERNAL_BUILD_AGENT:-YES}" != "YES" ]; then
+    return 0
+  fi
+
+  if [ "${CODED_EXTERNAL_BUILD_AGENT_STARTED:-0}" = "1" ]; then
+    return 0
+  fi
+  export CODED_EXTERNAL_BUILD_AGENT_STARTED=1
+
+  DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-${CODED_TARGET:-${CODED_PLATFORM:-unknown}}:${WORKER}}}"
+  local encoded_device
+  encoded_device="$(coded_z265a_urlencode "$DEVICE_ID")"
+
+  echo "[CODED] External build agent active: device=$DEVICE_ID target=${CODED_TARGET:-unknown} poll_sec=${CODED_EXTERNAL_BUILD_POLL_SEC:-20}"
+
+  (
+    while true; do
+      sleep "${CODED_EXTERNAL_BUILD_POLL_SEC:-20}"
+
+      RESP="$(curl -fsS "$API_URL/fleet/external-build/next/$encoded_device" 2>/dev/null || true)"
+      [ -z "$RESP" ] && continue
+
+      CMD_ID="$(printf "%s" "$RESP" | coded_z265a_json_get "command.command_id")"
+      TARGET="$(printf "%s" "$RESP" | coded_z265a_json_get "command.target")"
+
+      [ -z "$CMD_ID" ] && continue
+
+      echo "[M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE] picked command=$CMD_ID target=$TARGET"
+
+      coded_z265a_post_json "/fleet/external-build/$CMD_ID/running" "{
+        \"result\":{
+          \"marker\":\"M10.99Z265A_EXTERNAL_BUILD_AGENT_RUNNING\",
+          \"device_id\":\"$DEVICE_ID\",
+          \"worker\":\"${WORKER:-unknown}\",
+          \"target\":\"$TARGET\"
+        }
+      }"
+
+      if [ "${CODED_EXTERNAL_BUILD_STOP_MINER:-YES}" = "YES" ]; then
+        echo "[M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE] stopping miner for build window command=$CMD_ID"
+        pkill -f "/coded-miner" >/dev/null 2>&1 || true
+        pkill -f "coded-miner " >/dev/null 2>&1 || true
+      fi
+
+      ARTIFACT_PATH="$(coded_z265a_make_stub_artifact "$RESP" || true)"
+
+      if [ -n "$ARTIFACT_PATH" ] && [ -f "$ARTIFACT_PATH" ]; then
+        SHA256="$(shasum -a 256 "$ARTIFACT_PATH" 2>/dev/null | awk '{print $1}' || true)"
+        SIZE="$(wc -c < "$ARTIFACT_PATH" 2>/dev/null | tr -d ' ' || true)"
+
+        coded_z265a_post_json "/fleet/external-build/$CMD_ID/complete" "{
+          \"result\":{
+            \"marker\":\"M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_COMPLETED\",
+            \"status\":\"stub_build_completed\",
+            \"device_id\":\"$DEVICE_ID\",
+            \"worker\":\"${WORKER:-unknown}\",
+            \"target\":\"$TARGET\",
+            \"artifact_path\":\"$ARTIFACT_PATH\",
+            \"artifact_sha256\":\"$SHA256\",
+            \"artifact_size_bytes\":\"$SIZE\",
+            \"resume_default_after\":true,
+            \"publish_ready\":false
+          }
+        }"
+
+        echo "[M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE] completed command=$CMD_ID artifact=$ARTIFACT_PATH"
+      else
+        coded_z265a_post_json "/fleet/external-build/$CMD_ID/fail" "{
+          \"error\":\"Z265A stub artifact creation failed\",
+          \"result\":{
+            \"marker\":\"M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_FAILED\",
+            \"status\":\"stub_build_failed\",
+            \"device_id\":\"$DEVICE_ID\",
+            \"target\":\"$TARGET\"
+          }
+        }"
+
+        echo "[M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE] failed command=$CMD_ID"
+      fi
+
+      if [ "${CODED_EXTERNAL_BUILD_STOP_MINER:-YES}" = "YES" ]; then
+        echo "[M10.99Z265A_EXTERNAL_BUILD_AGENT_STUB_SAFE] build window finished; exiting child so supervisor resumes default mining"
+        exit 0
+      fi
+    done
+  ) &
+}
 start_external_fleet_heartbeat() {
   if [ "${CODED_FLEET_JOIN:-YES}" != "YES" ]; then
     return 0
@@ -813,6 +1003,7 @@ if [ -z "${CODED_CURRENT_RELEASE_FILE:-}" ]; then
 fi
 
   start_external_fleet_heartbeat
+  coded_external_build_agent_loop
   if [ "${CODED_PLATFORM:-}" = "macos-x86_64" ]; then
   echo "[CODED] Using native macOS Intel x86_64 build"
 else
