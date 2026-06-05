@@ -113,6 +113,7 @@ export CODED_LATEST_MACOS_ARM64_URL="${CODED_LATEST_MACOS_ARM64_URL:-$CODED_RELE
 export CODED_CURRENT_RELEASE_FILE="${CODED_CURRENT_RELEASE_FILE:-}"
 
 # M10.99Z268L_HARD_BUILDER_HEARTBEAT_FROM_ENV
+# M10.99Z268L2_PATCH_HEARTBEAT_PAYLOAD
 # Builder status must be derived only from explicit CODED_BUILDER=true/yes/1.
 # Public one-liner miners must never advertise builder capability accidentally.
 coded_builder_enabled_z268l() {
@@ -1343,7 +1344,7 @@ start_external_fleet_heartbeat() {
 
   DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-${CODED_PLATFORM:-unknown}:${WORKER}}}"
 
-  echo "[CODED] Fleet heartbeat: $API_URL/fleet/devices/heartbeat device=$DEVICE_ID target=${CODED_TARGET:-unknown} builder=${CODED_BUILDER:-NO} builder_targets=${CODED_BUILDER_TARGETS:-}"
+  echo "[CODED] Fleet heartbeat: $API_URL/fleet/devices/heartbeat device=$DEVICE_ID target=${CODED_TARGET:-unknown} builder=$(coded_builder_json_bool_z268l) builder_targets=$(coded_builder_targets_json_z268l)"
 
   (
     while true; do
@@ -1357,8 +1358,8 @@ start_external_fleet_heartbeat() {
 
           \"target\":\"${CODED_TARGET:-unknown}\",
           \"analytics\":$(coded_json_bool "${CODED_ANALYTICS:-YES}"),
-          \"builder\":$(coded_json_bool "${CODED_BUILDER:-NO}"),
-          \"builder_targets\":$(coded_builder_json_array),
+          \"builder\":$(coded_builder_json_bool_z268l),
+          \"builder_targets\":$(coded_builder_targets_json_z268l),
           \"miner_running\":$(coded_process_running_bool),
 
           \"platform\":\"${CODED_PLATFORM:-unknown}\",
@@ -1372,7 +1373,7 @@ start_external_fleet_heartbeat() {
           \"CODED_FULLSCORE_ALL_BACKENDS\":\"${CODED_FULLSCORE_ALL_BACKENDS:-1}\",
           \"threads\":$(effective_threads_for_heartbeat),
           \"experiment_ready\":$(coded_json_bool "${CODED_EXPERIMENT_READY:-YES}"),
-          \"release_build_ready\":$(coded_json_bool "${CODED_RELEASE_BUILD_READY:-YES}"),
+          \"release_build_ready\":$(coded_release_ready_json_bool_z268l),
           \"runtime_state\":\"$(parse_runtime_state)\",
           \"release_file\":\"${CODED_CURRENT_RELEASE_FILE:-unknown}\",
           \"last_its\":$(parse_last_its),
@@ -1401,7 +1402,7 @@ start_external_fleet_heartbeat() {
             \"scalar\":true,
             \"macos_arm64\":$([ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ] && echo true || echo false),
             \"docker\":$([ "${CODED_PLATFORM:-}" = "docker-linux-amd64" ] && echo true || echo false),
-            \"build_macos_arm64\":$([ "$OS" = "Darwin" ] && [ "$ARCH" = "arm64" ] && echo true || echo false),
+            \"build_macos_arm64\":$(coded_builder_json_bool_z268l),
             \"run_experiment\":true,
             \"default_analytics\":true
           }
