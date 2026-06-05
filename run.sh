@@ -112,6 +112,54 @@ export CODED_RELEASE_BASE_URL="${CODED_RELEASE_BASE_URL:-https://raw.githubuserc
 export CODED_LATEST_MACOS_ARM64_URL="${CODED_LATEST_MACOS_ARM64_URL:-$CODED_RELEASE_BASE_URL/latest-macos-arm64.txt}"
 export CODED_CURRENT_RELEASE_FILE="${CODED_CURRENT_RELEASE_FILE:-}"
 
+# M10.99Z268L_HARD_BUILDER_HEARTBEAT_FROM_ENV
+# Builder status must be derived only from explicit CODED_BUILDER=true/yes/1.
+# Public one-liner miners must never advertise builder capability accidentally.
+coded_builder_enabled_z268l() {
+  case "$(printf "%s" "${CODED_BUILDER:-no}" | tr '[:upper:]' '[:lower:]')" in
+    1|yes|y|true|on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+coded_builder_json_bool_z268l() {
+  if coded_builder_enabled_z268l; then
+    echo true
+  else
+    echo false
+  fi
+}
+
+coded_builder_targets_json_z268l() {
+  if coded_builder_enabled_z268l; then
+    local targets="${CODED_BUILDER_TARGETS:-macos-arm64}"
+    if [ -n "$targets" ]; then
+      printf '%s' "$targets" | awk -F',' 'BEGIN{printf "["} {
+        for(i=1;i<=NF;i++){
+          gsub(/^ +| +$/,"",$i);
+          if($i!=""){
+            if(n++) printf ",";
+            printf "\"%s\"", $i;
+          }
+        }
+      } END{printf "]"}'
+    else
+      printf '["macos-arm64"]'
+    fi
+  else
+    printf '[]'
+  fi
+}
+
+coded_release_ready_json_bool_z268l() {
+  if coded_builder_enabled_z268l; then
+    echo true
+  else
+    echo false
+  fi
+}
+
+
 # M10.99Z268K_PUBLIC_ONE_LINER_DEFAULTS
 # Public one-liner defaults:
 # - normal users join as default analytics miners
