@@ -277,12 +277,37 @@ coded_builder_json_array() {
   echo "$out"
 }
 
+# M10.99Z266D_ROBUST_MINER_RUNNING_HEARTBEAT
+# macOS external fleet heartbeat must not rely only on pgrep.
+# The miner can be wrapped by supervisor/tee/subshell and pgrep may false-negative.
+# Runtime truth for frontend should be true when either process OR fresh runtime log proves mining.
 coded_process_running_bool() {
   if pgrep -f "coded-miner" >/dev/null 2>&1; then
     echo true
-  else
-    echo false
+    return 0
   fi
+
+  if [ -n "${CODED_RUNTIME_LOG:-}" ] && [ -f "$CODED_RUNTIME_LOG" ]; then
+    if tail -n 80 "$CODED_RUNTIME_LOG" 2>/dev/null | grep -qE "SOLS:|\[[A-Za-z0-9_-]+\] [0-9.,]+ it/s|\[RUNTIME\] mining active"; then
+      echo true
+      return 0
+    fi
+  fi
+
+  local last avg state
+  last="$(parse_status_last_its 2>/dev/null || echo 0)"
+  avg="$(parse_status_avg_its 2>/dev/null || echo 0)"
+  state="$(parse_runtime_state 2>/dev/null || echo "")"
+
+  if [ "$state" = "mining_active" ]; then
+    echo true
+    return 0
+  fi
+
+  awk -v last="$last" -v avg="$avg" 'BEGIN {
+    if ((last+0) > 0 || (avg+0) > 0) print "true";
+    else print "false";
+  }'
 }
 
 coded_json_bool() {
