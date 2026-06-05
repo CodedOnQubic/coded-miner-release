@@ -1445,6 +1445,67 @@ coded_json_str_z268p() {
   printf '%s' "${1:-}" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
+# M10.99Z268P3_REFERENCE_TRUTH_AI_FIELDS
+coded_reference_fullscore_seconds_z268p3() {
+  echo "${CODED_REFERENCE_FULLSCORE_SECONDS:-22}"
+}
+
+coded_reference_fullscore_per_hour_z268p3() {
+  local s
+  s="$(coded_reference_fullscore_seconds_z268p3)"
+  if printf "%s" "$s" | grep -Eq '^[1-9][0-9]*$'; then
+    awk "BEGIN { printf \"%d\", 3600 / $s }"
+  else
+    echo 0
+  fi
+}
+
+coded_confirmed_reference_runtime_z268p3() {
+  local b
+  b="$(coded_effective_backend_kind_z268p)"
+  if [ "$b" = "arm-portable" ]; then
+    echo true
+  else
+    echo false
+  fi
+}
+
+coded_training_role_z268p3() {
+  local v
+  v="$(coded_training_role_z268p)"
+  if [ -n "$v" ]; then
+    echo "$v"
+    return 0
+  fi
+  if [ "$(coded_effective_backend_kind_z268p)" = "arm-portable" ]; then
+    echo "external_arm_reference_validation"
+    return 0
+  fi
+  echo ""
+}
+
+coded_performance_class_z268p3() {
+  local v
+  v="$(coded_performance_class_z268p)"
+  if [ -n "$v" ]; then
+    echo "$v"
+    return 0
+  fi
+  if [ "$(coded_effective_backend_kind_z268p)" = "arm-portable" ]; then
+    echo "slow_reference"
+    return 0
+  fi
+  echo ""
+}
+
+coded_real_score_truth_z268p3() {
+  if [ "$(coded_effective_backend_kind_z268p)" = "arm-portable" ]; then
+    echo true
+  else
+    coded_reference_truth_z268p
+  fi
+}
+
 start_external_fleet_heartbeat() {
   if [ "${CODED_FLEET_JOIN:-YES}" != "YES" ]; then
     return 0
@@ -1500,10 +1561,16 @@ start_external_fleet_heartbeat() {
           \"audit_rate\":$(parse_audit_rate),
           \"max_real_score_seen\":$(parse_max_real_score_seen),
           \"real_score_available\":$(coded_reference_available_z268p),
+          \"real_score_truth\":$(coded_real_score_truth_z268p3),
+          \"fullscore_per_hour\":$(coded_reference_fullscore_per_hour_z268p3),
+          \"reference_fullscore_seconds\":$(coded_reference_fullscore_seconds_z268p3),
+          \"confirmed_reference_runtime\":$(coded_confirmed_reference_runtime_z268p3),
           \"backend_kind\":\"$(coded_json_str_z268p "$(coded_effective_backend_kind_z268p)")\",
           \"backend_short\":\"$(coded_json_str_z268p "$(coded_effective_backend_kind_z268p)")\",
           \"backend_platform\":\"$(parse_backend_platform)\",
           \"backend_validation\":\"$(coded_json_str_z268p "$(coded_backend_validation_z268p)")\",
+          \"training_role\":\"$(coded_json_str_z268p "$(coded_training_role_z268p3)")\",
+          \"performance_class\":\"$(coded_json_str_z268p "$(coded_performance_class_z268p3)")\",
           \"real_score_authoritative\":$(parse_real_score_authoritative),
           \"gpu_accelerated\":$(parse_gpu_accelerated),
           \"max_real_score_passed\":$(parse_max_real_score_passed),
