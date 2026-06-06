@@ -1701,6 +1701,29 @@ if [ -z "${CODED_CURRENT_RELEASE_FILE:-}" ]; then
 fi
 
   coded_apply_public_oneliner_defaults_z268k
+
+  # M10.99Z270F_ARM_REFERENCE_UPLOADER_OWNS_HEARTBEAT
+  # In macOS ARM reference mode the Python uploader is the single source of telemetry truth.
+  # Do NOT start the generic run.sh fleet heartbeat, because it parses normal it/s logs
+  # and overwrites ARM reference telemetry with threshold=0.
+  if [ "${CODED_PLATFORM:-}" = "macos-arm64" ] && [ "${CODED_ARM_REFERENCE_DEFAULT:-0}" = "1" ]; then
+    export CODED_ANALYTICS="NO"
+    export CODED_FLEET_JOIN="NO"
+    export CODED_QATUM_REFERENCE_SCORE="1"
+    export CODED_FULLSCORE_THRESHOLD="${CODED_FULLSCORE_THRESHOLD:-321}"
+    export CODED_THRESHOLD="${CODED_THRESHOLD:-321}"
+    export CODED_FAST_SHADOW_THRESHOLD="${CODED_FAST_SHADOW_THRESHOLD:-300}"
+    export CODED_BACKEND="arm-portable"
+    export CODED_KERNEL_BACKEND="arm-portable"
+    export CODED_FAST_SHADOW_GATE="${CODED_FAST_SHADOW_GATE:-1}"
+    export CODED_FAST_SHADOW_AUDIT_RATE="${CODED_FAST_SHADOW_AUDIT_RATE:-1}"
+    export CODED_FAST_SHADOW_SUMMARY_SEC="${CODED_FAST_SHADOW_SUMMARY_SEC:-10}"
+    export CODED_REAL_SCORE_AUDIT_DEBUG="${CODED_REAL_SCORE_AUDIT_DEBUG:-1}"
+    export CODED_HI_TIMING="${CODED_HI_TIMING:-1}"
+    export CODED_PRIORITY_ROUTER="${CODED_PRIORITY_ROUTER:-M1098E}"
+    export CODED_SCORE_MODE="${CODED_SCORE_MODE:-hyperidentity_only}"
+  fi
+
   start_external_fleet_heartbeat
   coded_external_build_agent_loop
   # M10.99Z268I_ARM_REFERENCE_DEFAULTS
