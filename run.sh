@@ -61,6 +61,37 @@ else
 fi
 
 chmod +x "$BASE_DIR/coded-miner" 2>/dev/null || true
+
+# M10.99Z273U_PUBLIC_RUN_FETCH_RUNTIME_SCRIPTS
+# Public ARM tarball may contain only binary + manifest + uploader.
+# Fetch supervisor/console/build-agent directly from coded-miner branch so foreign Macs need no repo.
+SCRIPT_BRANCH="${CODED_SCRIPT_BRANCH:-z242-arm-hotpath-contract-clean}"
+SCRIPT_BASE="${CODED_SCRIPT_BASE:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner/${SCRIPT_BRANCH}}"
+
+mkdir -p "$BASE_DIR/scripts/macos" "$BASE_DIR/scripts"
+
+fetch_script_z273u() {
+  local rel="$1"
+  local out="$BASE_DIR/$rel"
+  if [ -s "$out" ]; then
+    chmod +x "$out" 2>/dev/null || true
+    return 0
+  fi
+
+  echo "${YELLOW}Fetching runtime script $rel...${RESET}"
+  curl -L --fail \
+    -H "Cache-Control: no-cache" \
+    -H "Pragma: no-cache" \
+    -o "$out" \
+    "$SCRIPT_BASE/$rel"
+
+  chmod +x "$out" 2>/dev/null || true
+}
+
+fetch_script_z273u "scripts/macos/coded_mac_arm_supervisor_z273g.sh"
+fetch_script_z273u "scripts/macos/coded_mac_arm_public_console_z273n.sh"
+fetch_script_z273u "scripts/external_arm_build_agent_z265b.sh"
+
 chmod +x "$BASE_DIR/scripts/macos/coded_mac_arm_supervisor_z273g.sh" 2>/dev/null || true
 chmod +x "$BASE_DIR/scripts/macos/coded_mac_arm_public_console_z273n.sh" 2>/dev/null || true
 chmod +x "$BASE_DIR/scripts/external_arm_build_agent_z265b.sh" 2>/dev/null || true
