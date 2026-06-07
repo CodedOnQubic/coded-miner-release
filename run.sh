@@ -91,6 +91,8 @@ fetch_script_z273u() {
 fetch_script_z273u "scripts/macos/coded_mac_arm_supervisor_z273g.sh"
 fetch_script_z273u "scripts/macos/coded_mac_arm_public_console_z273n.sh"
 fetch_script_z273u "scripts/external_arm_build_agent_z265b.sh"
+# M10.99Z273Y_RUN_FETCH_LAUNCHAGENT_INSTALLER
+fetch_script_z273u "scripts/macos/install_coded_mac_arm_fleet_console_z273y.sh"
 
 chmod +x "$BASE_DIR/scripts/macos/coded_mac_arm_supervisor_z273g.sh" 2>/dev/null || true
 chmod +x "$BASE_DIR/scripts/macos/coded_mac_arm_public_console_z273n.sh" 2>/dev/null || true
