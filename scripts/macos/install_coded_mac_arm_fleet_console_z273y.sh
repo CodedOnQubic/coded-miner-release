@@ -39,6 +39,13 @@ copy_runtime_script_z273y3() {
   local dst="$2"
 
   if [ -f "$REPO_ROOT/$src" ]; then
+    # M10.99Z273AF_SELF_COPY_SAFE
+    # Installer can run directly from /tmp runtime dir; cp same file must not abort under set -e.
+    if [ "$(cd "$(dirname "$REPO_ROOT/$src")" && pwd)/$(basename "$REPO_ROOT/$src")" = "$(cd "$(dirname "$dst")" && pwd)/$(basename "$dst")" ]; then
+      chmod +x "$dst" 2>/dev/null || true
+      echo "[M10.99Z273AF] skip self-copy $src"
+      return 0
+    fi
     cp "$REPO_ROOT/$src" "$dst"
     chmod +x "$dst" 2>/dev/null || true
     echo "[M10.99Z273Y3] copied $src -> $dst"
