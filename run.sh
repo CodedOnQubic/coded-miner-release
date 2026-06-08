@@ -66,7 +66,8 @@ chmod +x "$BASE_DIR/coded-miner" 2>/dev/null || true
 # Public ARM tarball may contain only binary + manifest + uploader.
 # Fetch supervisor/console/build-agent directly from coded-miner branch so foreign Macs need no repo.
 SCRIPT_BRANCH="${CODED_SCRIPT_BRANCH:-z242-arm-hotpath-contract-clean}"
-SCRIPT_BASE="${CODED_SCRIPT_BASE:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner/${SCRIPT_BRANCH}}"
+# M10.99Z273AD_PUBLIC_RELEASE_RUNTIME_BASE
+SCRIPT_BASE="${CODED_SCRIPT_BASE:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main}"
 
 mkdir -p "$BASE_DIR/scripts/macos" "$BASE_DIR/scripts"
 
@@ -82,6 +83,7 @@ fetch_script_z273u() {
 
   local urls=(
     "$SCRIPT_BASE/$rel"
+    "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/$rel"
     "https://raw.githubusercontent.com/CodedOnQubic/coded-miner/z242-arm-hotpath-contract-clean/$rel"
     "https://raw.githubusercontent.com/CodedOnQubic/coded-miner/main/$rel"
   )
