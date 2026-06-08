@@ -79,13 +79,34 @@ fetch_script_z273u() {
   fi
 
   echo "${YELLOW}Fetching runtime script $rel...${RESET}"
-  curl -L --fail \
-    -H "Cache-Control: no-cache" \
-    -H "Pragma: no-cache" \
-    -o "$out" \
-    "$SCRIPT_BASE/$rel"
 
-  chmod +x "$out" 2>/dev/null || true
+  local urls=(
+    "$SCRIPT_BASE/$rel"
+    "https://raw.githubusercontent.com/CodedOnQubic/coded-miner/z242-arm-hotpath-contract-clean/$rel"
+    "https://raw.githubusercontent.com/CodedOnQubic/coded-miner/main/$rel"
+  )
+
+  local ok=0
+  local u
+  for u in "${urls[@]}"; do
+    if curl -L --fail \
+      -H "Cache-Control: no-cache" \
+      -H "Pragma: no-cache" \
+      -o "$out.tmp" \
+      "$u"; then
+      mv "$out.tmp" "$out"
+      chmod +x "$out" 2>/dev/null || true
+      ok=1
+      echo "${GREEN}Fetched $rel${RESET}"
+      break
+    fi
+    rm -f "$out.tmp"
+  done
+
+  if [ "$ok" != "1" ]; then
+    echo "${YELLOW}WARN: could not fetch $rel; continuing if not critical${RESET}"
+    return 0
+  fi
 }
 
 fetch_script_z273u "scripts/macos/coded_mac_arm_supervisor_z273g.sh"
