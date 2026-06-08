@@ -66,6 +66,15 @@ mkdir -p "$(dirname "$RUNNER")" "$HOME/Library/LaunchAgents"
 
 cat > "$RUNNER" <<EOF
 #!/usr/bin/env bash
+
+# M10.99Z273AB2_RUNNER_LOG_ENV_ROBUST
+export CODED_MINER_LOG="/tmp/coded-miner-${WORKER}.log"
+export CODED_MAC_LOG="/tmp/coded-miner-${WORKER}.log"
+export CODED_UPLOADER_LOG="/tmp/coded-mac-arm-uploader-${WORKER}.log"
+export CODED_SELF_UPDATE_ENABLED="${AUTOUPDATE:-YES}"
+export CODED_SELF_UPDATE_SUPERVISOR="${AUTOUPDATE:-YES}"
+export CODED_BUILDER="${BUILDER:-0}"
+export CODED_ENABLE_BUILD_AGENT="${BUILDER:-0}"
 set -euo pipefail
 
 BASE_DIR="$BASE_DIR"
