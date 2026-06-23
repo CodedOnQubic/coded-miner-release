@@ -42,7 +42,7 @@ wsl bash -lc 'WALLET="DEINE_WALLET_HIER" WORKER="Windows"  "$(curl -fsSL https:/
 ```
 
 ```bash
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$body = @{ device_id='windows-x64:Windows'; worker_name='Windows'; target='windows-x64'; platform='windows-x64'; os='Windows'; arch='x64'; analytics=$true; builder=$true; builder_targets=@('windows-x64'); miner_running=$false; runtime_mode='builder_standby'; device_role='external_builder'; capabilities=@{ windows_x64=$true; build_windows_x64=$true; default_analytics=$true; run_experiment=$false }; source='manual_windows_cmd_powershell_register_z257' } | ConvertTo-Json -Depth 10; Invoke-RestMethod -Uri 'https://api.codedonqubic.com/fleet/devices/heartbeat' -Method POST -ContentType 'application/json' -Body $body"
+$env:WALLET="DEINE_QUBIC_WALLET_HIER"; $env:WORKER="WinScalar_Public_Test_01"; $env:CODED_ANALYTICS="YES"; $env:CODED_BACKEND="scalar"; $env:CODED_FORCE_FULLSCORE="1"; iwr -UseBasicParsing "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1?cb=$([int][double]::Parse((Get-Date -UFormat %s)))" | iex
 ```
 
 ---
