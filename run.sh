@@ -13,13 +13,22 @@ WALLET="${WALLET:-${CODED_WALLET:-}}"
 BUILDER="${BUILDER:-${CODED_ENABLE_BUILD_AGENT:-0}}"
 AUTOUPDATE="${AUTOUPDATE:-YES}"
 
-# M1091U5_PUBLIC_MAC_ARM_REALSCORE_DEFAULT
-# Public Mac ARM default is now RealScore + Fullscore + ANALYTICS.
-# Fast scalar/diagnostic mode must be explicitly requested later.
+# M1091U6_PUBLIC_MAC_ARM_STANDARD_PROFILE_DEFAULT
+# Public Mac ARM default:
+# - RealScore + Fullscore + ANALYTICS
+# - Standard miner profile
+# - Router is NOT baked into release.
+# - Backend/supervisor may change router later without new release.
 THRESHOLD="${THRESHOLD:-509}"
 THREADS="${THREADS:-1}"
-ROUTER="${ROUTER:-${CODED_PRIORITY_BUDGET_ROUTER:-M1098E}}"
-MATRIX="${MATRIX:-${CODED_PRIORITY_BUDGET_MATRIX:-p0_511_100,p1_509_25,p2_510_35,p3_lt509_3}}"
+
+# Empty by default = use current standard profile / backend default.
+# Optional manual override:
+#   ROUTER=M1098E MATRIX=... WALLET=... WORKER=mac2 bash -c "$(curl -fsSL .../run.sh)"
+ROUTER="${ROUTER:-${CODED_PRIORITY_BUDGET_ROUTER:-}}"
+MATRIX="${MATRIX:-${CODED_PRIORITY_BUDGET_MATRIX:-}}"
+
+STANDARD_PROFILE="${STANDARD_PROFILE:-${CODED_STANDARD_PROFILE:-DEFAULT_MINER_PROFILE}}"
 POOL="${POOL:-${CODED_POOL:-pool.codedonqubic.com:7777}}"
 
 CODED_ARM_MODE="${CODED_ARM_MODE:-realscore}"
@@ -45,8 +54,8 @@ CODED_REQUIRE_REAL_SCORE="${CODED_REQUIRE_REAL_SCORE:-1}"
 CODED_DISABLE_STUB_SCORE="${CODED_DISABLE_STUB_SCORE:-1}"
 CODED_NO_STUB_SCORE="${CODED_NO_STUB_SCORE:-1}"
 
-CODED_DEFAULT_ANALYTICS_PROFILE="${CODED_DEFAULT_ANALYTICS_PROFILE:-PUBLIC_MAC_ARM_REALSCORE_T${THRESHOLD}}"
-CODED_PROFILE_VERSION="${CODED_PROFILE_VERSION:-M1091U5_PUBLIC_MAC_ARM_REALSCORE_DEFAULT}"
+CODED_DEFAULT_ANALYTICS_PROFILE="${CODED_DEFAULT_ANALYTICS_PROFILE:-$STANDARD_PROFILE}"
+CODED_PROFILE_VERSION="${CODED_PROFILE_VERSION:-M1091U6_PUBLIC_MAC_ARM_STANDARD_PROFILE_DEFAULT}"
 
 if [ -z "$WALLET" ]; then
   echo "ERROR: missing WALLET"
@@ -76,6 +85,12 @@ echo "WORKER       $WORKER"
 echo "BUILDER      $BUILDER"
 echo "AUTOUPDATE   $AUTOUPDATE"
 echo "MODE         REALSCORE + ANALYTICS"
+echo "PROFILE      $CODED_DEFAULT_ANALYTICS_PROFILE"
+if [ -n "$ROUTER" ]; then
+  echo "ROUTER       $ROUTER"
+else
+  echo "ROUTER       backend/default profile"
+fi
 echo
 
 echo "${YELLOW}Downloading latest macOS ARM release...${RESET}"
@@ -169,7 +184,22 @@ if [ ! -f "$CONSOLE" ]; then
   exit 4
 fi
 
-echo "${GREEN}Starting CODED default analytics worker...${RESET}"
+echo "${GREEN}Starting CODED standard RealScore worker...${RESET}"
+
+# M1091U6_ROUTER_OVERRIDE_ONLY_IF_EXPLICIT
+# Default: do not bake router into public release.
+# If ROUTER/MATRIX are supplied, export them as manual overrides.
+if [ -n "$ROUTER" ]; then
+  export CODED_PRIORITY_BUDGET_ROUTER="$ROUTER"
+  export CODED_PRIORITY_ROUTER="$ROUTER"
+fi
+
+if [ -n "$MATRIX" ]; then
+  export CODED_PRIORITY_BUDGET_MATRIX="$MATRIX"
+fi
+
+export CODED_DEFAULT_ANALYTICS_PROFILE
+export CODED_PROFILE_VERSION
 
 pkill -f "coded_mac_arm_supervisor_z273g.sh.*${WORKER}" >/dev/null 2>&1 || true
 pkill -f "coded_mac_arm_log_uploader.py.*${WORKER}" >/dev/null 2>&1 || true
@@ -189,9 +219,6 @@ CODED_FAST_SHADOW_THRESHOLD="$THRESHOLD" \
 THREADS="$THREADS" \
 CODED_THREADS="$THREADS" \
 CODED_POOL="$POOL" \
-CODED_PRIORITY_BUDGET_ROUTER="$ROUTER" \
-CODED_PRIORITY_ROUTER="$ROUTER" \
-CODED_PRIORITY_BUDGET_MATRIX="$MATRIX" \
 CODED_PLATFORM="macos-arm64" \
 CODED_BACKEND_PLATFORM="macos-arm64" \
 CODED_KERNEL_BACKEND="$CODED_KERNEL_BACKEND" \
@@ -242,9 +269,6 @@ CODED_FAST_SHADOW_THRESHOLD="$THRESHOLD" \
 THREADS="$THREADS" \
 CODED_THREADS="$THREADS" \
 CODED_POOL="$POOL" \
-CODED_PRIORITY_BUDGET_ROUTER="$ROUTER" \
-CODED_PRIORITY_ROUTER="$ROUTER" \
-CODED_PRIORITY_BUDGET_MATRIX="$MATRIX" \
 CODED_PLATFORM="macos-arm64" \
 CODED_BACKEND_PLATFORM="macos-arm64" \
 CODED_KERNEL_BACKEND="$CODED_KERNEL_BACKEND" \
