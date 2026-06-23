@@ -45,6 +45,14 @@ wsl bash -lc 'WALLET="DEINE_WALLET_HIER" WORKER="Windows"  "$(curl -fsSL https:/
 $env:WALLET="DEINE_QUBIC_WALLET_HIER"; $env:WORKER="WinScalar_Public_Test_01"; $env:CODED_ANALYTICS="YES"; $env:CODED_BACKEND="scalar"; $env:CODED_FORCE_FULLSCORE="1"; iwr -UseBasicParsing "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1?cb=$([int][double]::Parse((Get-Date -UFormat %s)))" | iex
 ```
 
+Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH.Server*'
+Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
+Start-Service sshd
+Set-Service -Name sshd -StartupType Automatic
+New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
+hostname
+ipconfig
+
 ---
 
 ## ⚙️ Optional Parameters
