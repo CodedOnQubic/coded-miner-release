@@ -201,9 +201,18 @@ fi
 export CODED_DEFAULT_ANALYTICS_PROFILE
 export CODED_PROFILE_VERSION
 
-pkill -f "coded_mac_arm_supervisor_z273g.sh.*${WORKER}" >/dev/null 2>&1 || true
-pkill -f "coded_mac_arm_log_uploader.py.*${WORKER}" >/dev/null 2>&1 || true
-sleep 1
+# M1091U7_HARD_REPLACE_STALE_PUBLIC_MAC_RUNTIME
+# Public one-liner must be idempotent:
+# user can run it again and it replaces stale local runtime.
+echo "${YELLOW}Stopping stale local CODED Mac ARM runtime if present...${RESET}"
+
+pkill -9 -f "$BASE_DIR/scripts/macos/coded_mac_arm_supervisor_z273g.sh" >/dev/null 2>&1 || true
+pkill -9 -f "coded_mac_arm_supervisor_z273g.sh" >/dev/null 2>&1 || true
+pkill -9 -f "coded_mac_arm_log_uploader.py" >/dev/null 2>&1 || true
+pkill -9 -f "coded-runtime-sidecar.py" >/dev/null 2>&1 || true
+pkill -9 -f "$BASE_DIR/coded-miner" >/dev/null 2>&1 || true
+
+sleep 2
 
 CODED_WORKER_NAME="$WORKER" \
 CODED_DEVICE_ID="$DEVICE_ID" \
