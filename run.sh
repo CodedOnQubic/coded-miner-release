@@ -1,312 +1,255 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# M10.99Z273T_PUBLIC_MAC_ARM_FLEET_RUNNER
-# Public one-liner:
-#   WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
-#
-# Optional builder Mac1:
-#   BUILDER=1 WALLET=... WORKER=Oscar-Mac-ARM-Z273B-DEFAULT_ANALYTICS_M1098E_T321 bash -c "$(curl -fsSL .../run.sh)"
+# M1091U9_PUBLIC_RUNNER_DIRECT_STANDARD
+# Official public macOS ARM runner:
+# - downloads latest macOS ARM package
+# - starts coded-miner directly
+# - starts ANALYTICS sidecar directly
+# - no legacy supervisor
+# - no cockpit
+# - no LaunchAgent
+# - no hardcoded Oscar worker
+# - no hardcoded router
+# - RealScore / fullscore is mandatory
 
-WORKER="${WORKER:-${CODED_WORKER_NAME:-my-mac}}"
-WALLET="${WALLET:-${CODED_WALLET:-}}"
-BUILDER="${BUILDER:-${CODED_ENABLE_BUILD_AGENT:-0}}"
-AUTOUPDATE="${AUTOUPDATE:-YES}"
+RESET="\033[0m"
+GREEN="\033[32m"
+YELLOW="\033[33m"
+RED="\033[31m"
+BOLD="\033[1m"
 
-# M1091U6_PUBLIC_MAC_ARM_STANDARD_PROFILE_DEFAULT
-# Public Mac ARM default:
-# - RealScore + Fullscore + ANALYTICS
-# - Standard miner profile
-# - Router is NOT baked into release.
-# - Backend/supervisor may change router later without new release.
-THRESHOLD="${THRESHOLD:-509}"
-THREADS="${THREADS:-1}"
-
-# Empty by default = use current standard profile / backend default.
-# Optional manual override:
-#   ROUTER=M1098E MATRIX=... WALLET=... WORKER=mac2 bash -c "$(curl -fsSL .../run.sh)"
-ROUTER="${ROUTER:-${CODED_PRIORITY_BUDGET_ROUTER:-}}"
-MATRIX="${MATRIX:-${CODED_PRIORITY_BUDGET_MATRIX:-}}"
-
-STANDARD_PROFILE="${STANDARD_PROFILE:-${CODED_STANDARD_PROFILE:-DEFAULT_MINER_PROFILE}}"
-POOL="${POOL:-${CODED_POOL:-pool.codedonqubic.com:7777}}"
-
-CODED_ARM_MODE="${CODED_ARM_MODE:-realscore}"
-CODED_KERNEL_BACKEND="${CODED_KERNEL_BACKEND:-arm-portable-real}"
-CODED_BACKEND="${CODED_BACKEND:-arm-portable-real}"
-CODED_BACKEND_KIND="${CODED_BACKEND_KIND:-arm-neon}"
-CODED_BACKEND_SHORT="${CODED_BACKEND_SHORT:-arm}"
-QATUM_SCORE_ENGINE_MODE="${QATUM_SCORE_ENGINE_MODE:-reference}"
-CODED_SCORE_ENGINE_MODE="${CODED_SCORE_ENGINE_MODE:-qatum-reference}"
-
-CODED_FORCE_FULLSCORE="${CODED_FORCE_FULLSCORE:-1}"
-CODED_FULLSCORE="${CODED_FULLSCORE:-1}"
-CODED_FULLSCORE_ALL_BACKENDS="${CODED_FULLSCORE_ALL_BACKENDS:-1}"
-CODED_PREFILTER_DIFFICULTY="${CODED_PREFILTER_DIFFICULTY:-0}"
-CODED_FAST_SHADOW_GATE="${CODED_FAST_SHADOW_GATE:-1}"
-CODED_FAST_SHADOW_AUDIT_RATE="${CODED_FAST_SHADOW_AUDIT_RATE:-1}"
-CODED_FAST_SHADOW_SUMMARY_SEC="${CODED_FAST_SHADOW_SUMMARY_SEC:-30}"
-CODED_HI_TIMING="${CODED_HI_TIMING:-1}"
-CODED_VERBOSE_HI="${CODED_VERBOSE_HI:-1}"
-CODED_REAL_SCORE_AUDIT_DEBUG="${CODED_REAL_SCORE_AUDIT_DEBUG:-1}"
-CODED_SCORE_AUDIT_DEBUG="${CODED_SCORE_AUDIT_DEBUG:-1}"
-CODED_REQUIRE_REAL_SCORE="${CODED_REQUIRE_REAL_SCORE:-1}"
-CODED_DISABLE_STUB_SCORE="${CODED_DISABLE_STUB_SCORE:-1}"
-CODED_NO_STUB_SCORE="${CODED_NO_STUB_SCORE:-1}"
-
-CODED_DEFAULT_ANALYTICS_PROFILE="${CODED_DEFAULT_ANALYTICS_PROFILE:-$STANDARD_PROFILE}"
-CODED_PROFILE_VERSION="${CODED_PROFILE_VERSION:-M1091U6_PUBLIC_MAC_ARM_STANDARD_PROFILE_DEFAULT}"
-
-if [ -z "$WALLET" ]; then
-  echo "ERROR: missing WALLET"
-  echo "Usage:"
-  echo '  WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"'
-  exit 2
-fi
-
-DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-macos-arm64:${WORKER}}}"
-BASE_DIR="${CODED_MAC_BASE_DIR:-/tmp/coded-miner-macos-arm64}"
-URL="${CODED_MAC_ARM_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz}"
-TMP="/tmp/coded-mac-arm-public-runner-${WORKER}"
-mkdir -p "$TMP" "$BASE_DIR"
-
-GREEN=$'\033[32m'
-CYAN=$'\033[36m'
-YELLOW=$'\033[33m'
-RESET=$'\033[0m'
-
-echo "${CYAN}"
+echo
 echo "╔════════════════════════════════════════════════════════════════════╗"
-echo "║                 CODED PUBLIC MAC ARM FLEET RUNNER                ║"
+echo "║              CODED PUBLIC MAC ARM REALSCORE RUNNER               ║"
 echo "╚════════════════════════════════════════════════════════════════════╝"
-echo "${RESET}"
-echo "DEVICE       $DEVICE_ID"
-echo "WORKER       $WORKER"
-echo "BUILDER      $BUILDER"
-echo "AUTOUPDATE   $AUTOUPDATE"
-echo "MODE         REALSCORE + ANALYTICS"
-echo "PROFILE      $CODED_DEFAULT_ANALYTICS_PROFILE"
-if [ -n "$ROUTER" ]; then
-  echo "ROUTER       $ROUTER"
-else
-  echo "ROUTER       backend/default profile"
-fi
 echo
 
-echo "${YELLOW}Downloading latest macOS ARM release...${RESET}"
-curl -L --fail \
-  -H "Cache-Control: no-cache" \
-  -H "Pragma: no-cache" \
-  -o "$TMP/latest.tar.gz" \
-  "$URL"
-
-rm -rf "$TMP/extract"
-mkdir -p "$TMP/extract"
-tar -xzf "$TMP/latest.tar.gz" -C "$TMP/extract"
-
-if [ -d "$TMP/extract/coded-miner" ]; then
-  cp -R "$TMP/extract/coded-miner/." "$BASE_DIR/"
-else
-  cp -R "$TMP/extract/." "$BASE_DIR/"
+if [ -z "${WALLET:-}" ] || [ "${WALLET:-}" = "DEINE_WALLET" ] || [ "${WALLET:-}" = "YOUR_WALLET" ]; then
+  echo -e "${RED}ERROR: WALLET is required.${RESET}"
+  echo
+  echo "Example:"
+  echo '  WALLET=YOUR_QUBIC_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"'
+  exit 1
 fi
+
+WORKER="${WORKER:-${CODED_WORKER_NAME:-$(hostname | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9._-')}}"
+if [ -z "$WORKER" ]; then
+  WORKER="mac-arm"
+fi
+
+WORKER_SAFE="$(echo "$WORKER" | tr -cd 'A-Za-z0-9._-' | cut -c1-64)"
+if [ -z "$WORKER_SAFE" ]; then
+  WORKER_SAFE="mac-arm"
+fi
+
+DEVICE_ID="${DEVICE_ID:-${CODED_DEVICE_ID:-macos-arm64:${WORKER_SAFE}}}"
+THREADS="${THREADS:-${CODED_THREADS:-1}}"
+THRESHOLD="${THRESHOLD:-${CODED_THRESHOLD:-509}}"
+POOL="${POOL:-${CODED_POOL:-pool.codedonqubic.com:7777}}"
+API_ROOT="${CODED_POOL_API_BASE:-${API_ROOT:-http://pool.codedonqubic.com:4000}}"
+
+URL="${CODED_MAC_ARM_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz}"
+
+BASE_DIR="${CODED_BASE_DIR:-/tmp/coded-miner-macos-arm64}"
+TMP_DIR="${BASE_DIR}.download.$$"
+TAR_FILE="/tmp/coded-miner-macos-arm64.$$.tar.gz"
+
+STATE_ROOT="${HOME}/.coded-miner/mac-arm"
+STATE_DIR="${STATE_ROOT}/${WORKER_SAFE}"
+LOG_DIR="${STATE_DIR}/logs"
+PID_DIR="${STATE_DIR}/pids"
+
+mkdir -p "$LOG_DIR" "$PID_DIR"
+
+RUN_ID="LIVE_${WORKER_SAFE}_ARM_REALSCORE_$(date -u +%Y%m%d_%H%M%S)"
+RUN_LOG="${LOG_DIR}/${RUN_ID}.log"
+ANALYTICS_LOG="${LOG_DIR}/ANALYTICS_${RUN_ID}.log"
+
+echo "DEVICE       $DEVICE_ID"
+echo "WORKER       $WORKER_SAFE"
+echo "MODE         REALSCORE + ANALYTICS"
+echo "PROFILE      DEFAULT_MINER_PROFILE"
+echo "ROUTER       backend/default profile"
+echo "THRESHOLD    $THRESHOLD"
+echo "THREADS      $THREADS"
+echo "POOL         $POOL"
+echo "API          $API_ROOT"
+echo
+
+echo -e "${YELLOW}Downloading latest macOS ARM release...${RESET}"
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_DIR"
+
+curl -fL "$URL" -o "$TAR_FILE"
+tar -xzf "$TAR_FILE" -C "$TMP_DIR"
+
+if [ ! -x "$TMP_DIR/coded-miner" ]; then
+  chmod +x "$TMP_DIR/coded-miner" 2>/dev/null || true
+fi
+
+if [ ! -x "$TMP_DIR/coded-miner" ]; then
+  echo -e "${RED}ERROR: coded-miner missing or not executable in release package.${RESET}"
+  exit 1
+fi
+
+if [ ! -f "$TMP_DIR/coded-runtime-sidecar.py" ]; then
+  echo -e "${RED}ERROR: coded-runtime-sidecar.py missing in release package.${RESET}"
+  exit 1
+fi
+
+if [ ! -d "$TMP_DIR/ANALYTICS" ]; then
+  echo -e "${RED}ERROR: ANALYTICS component missing in release package.${RESET}"
+  exit 1
+fi
+
+echo -e "${YELLOW}Stopping stale local CODED runtime...${RESET}"
+
+for pf in "$PID_DIR/miner.pid" "$PID_DIR/analytics.pid"; do
+  if [ -s "$pf" ]; then
+    pid="$(cat "$pf" 2>/dev/null || true)"
+    if [ -n "$pid" ]; then
+      kill -9 "$pid" 2>/dev/null || true
+    fi
+    rm -f "$pf"
+  fi
+done
+
+PIDS="$(ps ax -o pid=,command= \
+  | grep -E "${BASE_DIR}|coded-runtime-sidecar.py|coded_mac_arm|Oscar-Mac|macos-arm64:${WORKER_SAFE}|--worker ${WORKER_SAFE}" \
+  | grep -v grep \
+  | awk '{print $1}' || true)"
+
+if [ -n "$PIDS" ]; then
+  echo "$PIDS" | xargs kill -9 2>/dev/null || true
+fi
+
+sleep 1
+
+rm -rf "$BASE_DIR"
+mv "$TMP_DIR" "$BASE_DIR"
+rm -f "$TAR_FILE"
 
 chmod +x "$BASE_DIR/coded-miner" 2>/dev/null || true
+chmod +x "$BASE_DIR/coded-runtime-sidecar.py" 2>/dev/null || true
 
-# M10.99Z273U_PUBLIC_RUN_FETCH_RUNTIME_SCRIPTS
-# Public ARM tarball may contain only binary + manifest + uploader.
-# Fetch supervisor/console/build-agent directly from coded-miner branch so foreign Macs need no repo.
-SCRIPT_BRANCH="${CODED_SCRIPT_BRANCH:-z242-arm-hotpath-contract-clean}"
-# M10.99Z273AD_PUBLIC_RELEASE_RUNTIME_BASE
-SCRIPT_BASE="${CODED_SCRIPT_BASE:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main}"
+cat > "$STATE_DIR/current.env" <<EOF
+export RUN_ID="$RUN_ID"
+export RUN_LOG="$RUN_LOG"
+export ANALYTICS_LOG="$ANALYTICS_LOG"
+export DEVICE_ID="$DEVICE_ID"
+export WORKER="$WORKER_SAFE"
+export BASE_DIR="$BASE_DIR"
+EOF
 
-mkdir -p "$BASE_DIR/scripts/macos" "$BASE_DIR/scripts"
+echo -e "${YELLOW}Starting CODED RealScore miner...${RESET}"
 
-fetch_script_z273u() {
-  local rel="$1"
-  local out="$BASE_DIR/$rel"
-  # M1091U8_FORCE_REFRESH_RUNTIME_SCRIPTS
-  # Public runner must always refresh runtime scripts so stale local
-  # supervisor/console logic cannot survive a release update.
-  if [ "${CODED_FORCE_RUNTIME_SCRIPT_REFRESH:-YES}" != "YES" ] && [ -s "$out" ]; then
-    chmod +x "$out" 2>/dev/null || true
-    return 0
-  fi
+nohup env \
+  CODED_ANALYTICS=YES \
+  ANALYTICS=YES \
+  RIG_ID="$DEVICE_ID" \
+  CODED_RIG_ID="$DEVICE_ID" \
+  DEVICE_ID="$DEVICE_ID" \
+  CODED_DEVICE_ID="$DEVICE_ID" \
+  WORKER="$WORKER_SAFE" \
+  WORKER_NAME="$WORKER_SAFE" \
+  CODED_WORKER_NAME="$WORKER_SAFE" \
+  RUN_ID="$RUN_ID" \
+  CODED_RUN_ID="$RUN_ID" \
+  RUN_LOG="$RUN_LOG" \
+  CODED_RUN_LOG="$RUN_LOG" \
+  CODED_ANALYTICS_LOG="$RUN_LOG" \
+  THRESHOLD="$THRESHOLD" \
+  CODED_THRESHOLD="$THRESHOLD" \
+  CODED_FAST_SHADOW_THRESHOLD="$THRESHOLD" \
+  THREADS="$THREADS" \
+  CODED_THREADS="$THREADS" \
+  CODED_PLATFORM="macos-arm64" \
+  CODED_BACKEND_PLATFORM="macos-arm64" \
+  CODED_KERNEL_BACKEND="arm-portable-real" \
+  CODED_BACKEND="arm-portable-real" \
+  CODED_BACKEND_KIND="arm-neon" \
+  CODED_BACKEND_SHORT="arm" \
+  QATUM_SCORE_ENGINE_MODE="reference" \
+  CODED_SCORE_ENGINE_MODE="qatum-reference" \
+  CODED_FORCE_FULLSCORE=1 \
+  CODED_FULLSCORE=1 \
+  CODED_FULLSCORE_ALL_BACKENDS=1 \
+  CODED_PREFILTER_DIFFICULTY=0 \
+  CODED_FAST_SHADOW_GATE=1 \
+  CODED_FAST_SHADOW_AUDIT_RATE=1 \
+  CODED_FAST_SHADOW_SUMMARY_SEC=30 \
+  CODED_HI_TIMING=1 \
+  CODED_VERBOSE_HI=1 \
+  CODED_REAL_SCORE_AUDIT_DEBUG=1 \
+  CODED_SCORE_AUDIT_DEBUG=1 \
+  CODED_REQUIRE_REAL_SCORE=1 \
+  CODED_DISABLE_STUB_SCORE=1 \
+  CODED_NO_STUB_SCORE=1 \
+  CODED_DEFAULT_ANALYTICS_PROFILE="DEFAULT_MINER_PROFILE" \
+  CODED_PROFILE_VERSION="M1091U9_PUBLIC_MAC_ARM_REALSCORE_DIRECT_STANDARD" \
+  "$BASE_DIR/coded-miner" \
+    --pool "$POOL" \
+    --wallet "$WALLET" \
+    --worker "$WORKER_SAFE" \
+    --threads "$THREADS" \
+  >> "$RUN_LOG" 2>&1 &
 
-  echo "${YELLOW}Fetching runtime script $rel...${RESET}"
+MINER_PID=$!
+echo "$MINER_PID" > "$PID_DIR/miner.pid"
 
-  local urls=(
-    "$SCRIPT_BASE/$rel"
-    "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/$rel"
-    "https://raw.githubusercontent.com/CodedOnQubic/coded-miner/z242-arm-hotpath-contract-clean/$rel"
-    "https://raw.githubusercontent.com/CodedOnQubic/coded-miner/main/$rel"
-  )
+sleep 5
 
-  local ok=0
-  local u
-  for u in "${urls[@]}"; do
-    if curl -L --fail \
-      -H "Cache-Control: no-cache" \
-      -H "Pragma: no-cache" \
-      -o "$out.tmp" \
-      "$u"; then
-      mv "$out.tmp" "$out"
-      chmod +x "$out" 2>/dev/null || true
-      ok=1
-      echo "${GREEN}Fetched $rel${RESET}"
-      break
-    fi
-    rm -f "$out.tmp"
-  done
+echo -e "${YELLOW}Starting CODED ANALYTICS sidecar...${RESET}"
 
-  if [ "$ok" != "1" ]; then
-    echo "${YELLOW}WARN: could not fetch $rel; continuing if not critical${RESET}"
-    return 0
-  fi
-}
+nohup env \
+  PYTHONPATH="$BASE_DIR" \
+  CODED_POOL_API_BASE="$API_ROOT" \
+  RIG_ID="$DEVICE_ID" \
+  CODED_RIG_ID="$DEVICE_ID" \
+  DEVICE_ID="$DEVICE_ID" \
+  CODED_DEVICE_ID="$DEVICE_ID" \
+  WORKER="$WORKER_SAFE" \
+  WORKER_NAME="$WORKER_SAFE" \
+  CODED_WORKER_NAME="$WORKER_SAFE" \
+  RUN_ID="$RUN_ID" \
+  CODED_RUN_ID="$RUN_ID" \
+  RUN_LOG="$RUN_LOG" \
+  CODED_RUN_LOG="$RUN_LOG" \
+  CODED_ANALYTICS_LOG="$RUN_LOG" \
+  THRESHOLD="$THRESHOLD" \
+  CODED_THRESHOLD="$THRESHOLD" \
+  CODED_FAST_SHADOW_THRESHOLD="$THRESHOLD" \
+  THREADS="$THREADS" \
+  CODED_THREADS="$THREADS" \
+  CODED_PLATFORM="macos-arm64" \
+  CODED_BACKEND_PLATFORM="macos-arm64" \
+  CODED_KERNEL_BACKEND="arm-portable-real" \
+  CODED_BACKEND="arm-portable-real" \
+  CODED_ANALYTICS=YES \
+  ANALYTICS=YES \
+  python3 "$BASE_DIR/coded-runtime-sidecar.py" \
+  >> "$ANALYTICS_LOG" 2>&1 &
 
-fetch_script_z273u "scripts/macos/coded_mac_arm_supervisor_z273g.sh"
-fetch_script_z273u "scripts/macos/coded_mac_arm_public_console_z273n.sh"
-fetch_script_z273u "scripts/external_arm_build_agent_z265b.sh"
-# M10.99Z273Y_RUN_FETCH_LAUNCHAGENT_INSTALLER
-fetch_script_z273u "scripts/macos/install_coded_mac_arm_fleet_console_z273y.sh"
-
-chmod +x "$BASE_DIR/scripts/macos/coded_mac_arm_supervisor_z273g.sh" 2>/dev/null || true
-chmod +x "$BASE_DIR/scripts/macos/coded_mac_arm_public_console_z273n.sh" 2>/dev/null || true
-chmod +x "$BASE_DIR/scripts/external_arm_build_agent_z265b.sh" 2>/dev/null || true
-
-SUP="$BASE_DIR/scripts/macos/coded_mac_arm_supervisor_z273g.sh"
-CONSOLE="$BASE_DIR/scripts/macos/coded_mac_arm_public_console_z273n.sh"
-
-if [ ! -f "$SUP" ]; then
-  echo "ERROR: supervisor missing in release package: $SUP"
-  exit 3
-fi
-
-if [ ! -f "$CONSOLE" ]; then
-  echo "ERROR: public console missing in release package: $CONSOLE"
-  exit 4
-fi
-
-echo "${GREEN}Starting CODED standard RealScore worker...${RESET}"
-
-# M1091U6_ROUTER_OVERRIDE_ONLY_IF_EXPLICIT
-# Default: do not bake router into public release.
-# If ROUTER/MATRIX are supplied, export them as manual overrides.
-if [ -n "$ROUTER" ]; then
-  export CODED_PRIORITY_BUDGET_ROUTER="$ROUTER"
-  export CODED_PRIORITY_ROUTER="$ROUTER"
-fi
-
-if [ -n "$MATRIX" ]; then
-  export CODED_PRIORITY_BUDGET_MATRIX="$MATRIX"
-fi
-
-export CODED_DEFAULT_ANALYTICS_PROFILE
-export CODED_PROFILE_VERSION
-
-# M1091U7_HARD_REPLACE_STALE_PUBLIC_MAC_RUNTIME
-# Public one-liner must be idempotent:
-# user can run it again and it replaces stale local runtime.
-echo "${YELLOW}Stopping stale local CODED Mac ARM runtime if present...${RESET}"
-
-pkill -9 -f "$BASE_DIR/scripts/macos/coded_mac_arm_supervisor_z273g.sh" >/dev/null 2>&1 || true
-pkill -9 -f "coded_mac_arm_supervisor_z273g.sh" >/dev/null 2>&1 || true
-pkill -9 -f "coded_mac_arm_log_uploader.py" >/dev/null 2>&1 || true
-pkill -9 -f "coded-runtime-sidecar.py" >/dev/null 2>&1 || true
-pkill -9 -f "$BASE_DIR/coded-miner" >/dev/null 2>&1 || true
+ANALYTICS_PID=$!
+echo "$ANALYTICS_PID" > "$PID_DIR/analytics.pid"
 
 sleep 2
 
-CODED_WORKER_NAME="$WORKER" \
-CODED_DEVICE_ID="$DEVICE_ID" \
-CODED_RIG_ID="$DEVICE_ID" \
-RIG_ID="$DEVICE_ID" \
-WORKER_NAME="$WORKER" \
-WORKER="$WORKER" \
-CODED_WALLET="$WALLET" \
-WALLET="$WALLET" \
-THRESHOLD="$THRESHOLD" \
-CODED_THRESHOLD="$THRESHOLD" \
-CODED_FAST_SHADOW_THRESHOLD="$THRESHOLD" \
-THREADS="$THREADS" \
-CODED_THREADS="$THREADS" \
-CODED_POOL="$POOL" \
-CODED_PLATFORM="macos-arm64" \
-CODED_BACKEND_PLATFORM="macos-arm64" \
-CODED_KERNEL_BACKEND="$CODED_KERNEL_BACKEND" \
-CODED_BACKEND="$CODED_BACKEND" \
-CODED_BACKEND_KIND="$CODED_BACKEND_KIND" \
-CODED_BACKEND_SHORT="$CODED_BACKEND_SHORT" \
-QATUM_SCORE_ENGINE_MODE="$QATUM_SCORE_ENGINE_MODE" \
-CODED_SCORE_ENGINE_MODE="$CODED_SCORE_ENGINE_MODE" \
-CODED_FORCE_FULLSCORE="$CODED_FORCE_FULLSCORE" \
-CODED_FULLSCORE="$CODED_FULLSCORE" \
-CODED_FULLSCORE_ALL_BACKENDS="$CODED_FULLSCORE_ALL_BACKENDS" \
-CODED_PREFILTER_DIFFICULTY="$CODED_PREFILTER_DIFFICULTY" \
-CODED_FAST_SHADOW_GATE="$CODED_FAST_SHADOW_GATE" \
-CODED_FAST_SHADOW_AUDIT_RATE="$CODED_FAST_SHADOW_AUDIT_RATE" \
-CODED_FAST_SHADOW_SUMMARY_SEC="$CODED_FAST_SHADOW_SUMMARY_SEC" \
-CODED_HI_TIMING="$CODED_HI_TIMING" \
-CODED_VERBOSE_HI="$CODED_VERBOSE_HI" \
-CODED_REAL_SCORE_AUDIT_DEBUG="$CODED_REAL_SCORE_AUDIT_DEBUG" \
-CODED_SCORE_AUDIT_DEBUG="$CODED_SCORE_AUDIT_DEBUG" \
-CODED_REQUIRE_REAL_SCORE="$CODED_REQUIRE_REAL_SCORE" \
-CODED_DISABLE_STUB_SCORE="$CODED_DISABLE_STUB_SCORE" \
-CODED_NO_STUB_SCORE="$CODED_NO_STUB_SCORE" \
-CODED_DEFAULT_ANALYTICS_PROFILE="$CODED_DEFAULT_ANALYTICS_PROFILE" \
-CODED_PROFILE_VERSION="$CODED_PROFILE_VERSION" \
-CODED_ANALYTICS="YES" \
-ANALYTICS="YES" \
-CODED_SELF_UPDATE_CHECK_SEC="${CODED_SELF_UPDATE_CHECK_SEC:-60}" \
-CODED_SELF_UPDATE_ENABLED="$AUTOUPDATE" \
-CODED_POOL_API="${CODED_POOL_API:-http://pool.codedonqubic.com:4000/fleet/devices/heartbeat}" \
-CODED_POOL_API_ROOT="${CODED_POOL_API_ROOT:-http://pool.codedonqubic.com:4000}" \
-CODED_ENABLE_BUILD_AGENT="$BUILDER" \
-CODED_DISABLE_BUILD_AGENT="$([ "$BUILDER" = "1" ] && echo 0 || echo 1)" \
-nohup "$SUP" > "/tmp/coded-mac-arm-supervisor-launch-${WORKER}.log" 2>&1 &
-
-sleep 3
-
-CODED_WORKER_NAME="$WORKER" \
-CODED_DEVICE_ID="$DEVICE_ID" \
-CODED_RIG_ID="$DEVICE_ID" \
-RIG_ID="$DEVICE_ID" \
-WORKER_NAME="$WORKER" \
-WORKER="$WORKER" \
-CODED_WALLET="$WALLET" \
-WALLET="$WALLET" \
-THRESHOLD="$THRESHOLD" \
-CODED_THRESHOLD="$THRESHOLD" \
-CODED_FAST_SHADOW_THRESHOLD="$THRESHOLD" \
-THREADS="$THREADS" \
-CODED_THREADS="$THREADS" \
-CODED_POOL="$POOL" \
-CODED_PLATFORM="macos-arm64" \
-CODED_BACKEND_PLATFORM="macos-arm64" \
-CODED_KERNEL_BACKEND="$CODED_KERNEL_BACKEND" \
-CODED_BACKEND="$CODED_BACKEND" \
-CODED_BACKEND_KIND="$CODED_BACKEND_KIND" \
-CODED_BACKEND_SHORT="$CODED_BACKEND_SHORT" \
-QATUM_SCORE_ENGINE_MODE="$QATUM_SCORE_ENGINE_MODE" \
-CODED_SCORE_ENGINE_MODE="$CODED_SCORE_ENGINE_MODE" \
-CODED_FORCE_FULLSCORE="$CODED_FORCE_FULLSCORE" \
-CODED_FULLSCORE="$CODED_FULLSCORE" \
-CODED_FULLSCORE_ALL_BACKENDS="$CODED_FULLSCORE_ALL_BACKENDS" \
-CODED_PREFILTER_DIFFICULTY="$CODED_PREFILTER_DIFFICULTY" \
-CODED_FAST_SHADOW_GATE="$CODED_FAST_SHADOW_GATE" \
-CODED_FAST_SHADOW_AUDIT_RATE="$CODED_FAST_SHADOW_AUDIT_RATE" \
-CODED_FAST_SHADOW_SUMMARY_SEC="$CODED_FAST_SHADOW_SUMMARY_SEC" \
-CODED_HI_TIMING="$CODED_HI_TIMING" \
-CODED_VERBOSE_HI="$CODED_VERBOSE_HI" \
-CODED_REAL_SCORE_AUDIT_DEBUG="$CODED_REAL_SCORE_AUDIT_DEBUG" \
-CODED_SCORE_AUDIT_DEBUG="$CODED_SCORE_AUDIT_DEBUG" \
-CODED_REQUIRE_REAL_SCORE="$CODED_REQUIRE_REAL_SCORE" \
-CODED_DISABLE_STUB_SCORE="$CODED_DISABLE_STUB_SCORE" \
-CODED_NO_STUB_SCORE="$CODED_NO_STUB_SCORE" \
-CODED_DEFAULT_ANALYTICS_PROFILE="$CODED_DEFAULT_ANALYTICS_PROFILE" \
-CODED_PROFILE_VERSION="$CODED_PROFILE_VERSION" \
-CODED_ANALYTICS="YES" \
-ANALYTICS="YES" \
-CODED_SELF_UPDATE_ENABLED="$AUTOUPDATE" \
-CODED_ENABLE_BUILD_AGENT="$BUILDER" \
-"$CONSOLE"
+echo
+echo -e "${GREEN}CODED macOS ARM RealScore worker started.${RESET}"
+echo
+echo "RUN_ID        $RUN_ID"
+echo "MINER_PID     $MINER_PID"
+echo "ANALYTICS_PID $ANALYTICS_PID"
+echo "RUN_LOG       $RUN_LOG"
+echo "ANALYTICS_LOG $ANALYTICS_LOG"
+echo
+echo "Check:"
+echo "  source \"$STATE_DIR/current.env\""
+echo "  tail -f \"\$RUN_LOG\""
+echo
+echo "Process:"
+ps ax -o pid=,command= \
+  | grep -E "coded-runtime-sidecar|coded-miner|--worker ${WORKER_SAFE}" \
+  | grep -v grep || true
