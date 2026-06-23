@@ -124,7 +124,10 @@ mkdir -p "$BASE_DIR/scripts/macos" "$BASE_DIR/scripts"
 fetch_script_z273u() {
   local rel="$1"
   local out="$BASE_DIR/$rel"
-  if [ -s "$out" ]; then
+  # M1091U8_FORCE_REFRESH_RUNTIME_SCRIPTS
+  # Public runner must always refresh runtime scripts so stale local
+  # supervisor/console logic cannot survive a release update.
+  if [ "${CODED_FORCE_RUNTIME_SCRIPT_REFRESH:-YES}" != "YES" ] && [ -s "$out" ]; then
     chmod +x "$out" 2>/dev/null || true
     return 0
   fi
