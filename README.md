@@ -17,6 +17,8 @@ Qubic CPU Miner for the CODED mining pool.
 
 # 🚀 Quick Start (1-Click)
 
+
+
 ## 🖥️ Windows
 
 - Press Win+R and type cmd.exe
@@ -56,6 +58,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing htt
 ---
 
 
+
 ## 🍎 MAC (M1 / M2 / M3)
 
 - Open the terminal app on your mac and paste in the onliner
@@ -67,6 +70,7 @@ WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://r
 ```
 
 ---
+
 
 
 ## 🐧 Linux
@@ -105,7 +109,8 @@ QUBIC_WALLET='YOUR_QUBIC_WALLET' QUBIC_WORKER='YOUR_WORKER_NAME' bash -c "$(curl
 ---
 
 
-# HiveOS Flight Sheet Setup
+
+# 🐝 HiveOS Flight Sheet Setup
 
 HiveOS → **Flight Sheet** → **Custom Miner** → **Expert Section**
 
@@ -149,6 +154,8 @@ Use the following values:
 
 ---
 
+
+
 # 📡 Dashboard
 
 Workers appear automatically:
@@ -159,15 +166,6 @@ Workers appear automatically:
 - Hashrate  
 
 👉 https://codedonqubic.com/pool
-
- 
----
-
-# Security
-
-- No private keys required  
-- Wallet is used for identification only  
-- Binary-only release  
 
 ---
 
