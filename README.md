@@ -37,7 +37,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing htt
 powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME -avx2 -10"
 ```
 
-## ⚙️ Optional Parameters
+### ⚙️ Optional Parameters
 ```json
 -avx2, -avx512, -1, -2, -3 etc
 ```
@@ -91,7 +91,7 @@ WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://r
 QUBIC_WALLET='YOUR_QUBIC_WALLET' QUBIC_WORKER='YOUR_WORKER_NAME' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- -avx2 -10
 ```
 
-## ⚙️ Optional Parameters
+### ⚙️ Optional Parameters
 ```json
 -avx2, -avx512, -1, -2, -3 etc
 ```
