@@ -25,13 +25,13 @@ The official Qubic Miner for the CODED mining pool.
 - Paste in the onliner
 - Set your own Qubic Wallet and a public worker name for your local machine
 
-### Auto Performance Mode (Automatic backend and thread optimization)
+### Auto optimization mode (automatic backend and thread optimization)
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME"
 ```
 
-### (Optional) Manual backend and thread control
+### Manual mode (optional backend and thread control)
 
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME -avx2 -10"
@@ -67,7 +67,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing htt
 - Open the terminal app on your mac and paste in the onliner
 - Set your own Qubic Wallet and a public worker name for your Machine
 
-### Performance Mode (Automatic backend and thread optimization )
+### Auto optimization mode
 ```bash
 WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
@@ -81,12 +81,12 @@ WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://r
 - Open the command on your machine and paste in the onliner
 - Set your own Qubic Wallet and a public worker name for your local Machine
 
-### Auto Performance Mode (Automatic backend and threads optimization)
+### Auto optimization mode (automatic backend and threads optimization)
 ```bash
 WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
 
-### (Optional) Manual backend and thread control
+### Manual mode (optional backend and thread control)
 ```bash
 QUBIC_WALLET='YOUR_QUBIC_WALLET' QUBIC_WORKER='YOUR_WORKER_NAME' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- -avx2 -10
 ```
