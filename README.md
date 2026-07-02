@@ -219,5 +219,5 @@ Report issues, bugs, or performance results.
 
 
 ```powershell
-powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI -Worker RigPortable_Win8 -avx2 -2"
+powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI -Worker RigPortable_Win8"
 ```
