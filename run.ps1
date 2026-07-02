@@ -10,8 +10,6 @@ param(
 # M1091V27_WINDOWS_PUBLIC_RUN_HIVE_ANALYTICS
 # M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
 # M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
-# M1091V27F_RESTORE_CANONICAL_WITH_CMD_BRIDGE
-# M1091V27G_WINDOWS_STOP_OLD_MINER_UNIQUE_DIR
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -459,29 +457,14 @@ if ($Threads -le 0) { $Threads = [Math]::Max(1, [Environment]::ProcessorCount - 
 
 $base = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "CODED" } else { Join-Path $env:TEMP "CODED" }
 $root = Join-Path $base "miner"
-
-# M1091V27G_WINDOWS_STOP_OLD_MINER_UNIQUE_DIR
-# Windows locks running .exe files. Stop previous CODED miner processes before extracting.
-# Also extract into a unique folder per launch so a locked old latest folder cannot break startup.
-try {
-  Get-Process coded-miner, coded-miner-avx2, coded-miner-avx512, coded-miner-scalar -ErrorAction SilentlyContinue |
-    Stop-Process -Force -ErrorAction SilentlyContinue
-} catch {}
-
-try {
-  Get-WmiObject Win32_Process |
-    Where-Object { $_.CommandLine -like "*coded-windows-analytics.ps1*" -and $_.ProcessId -ne $PID } |
-    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-} catch {}
-
-$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd_HHmmss")
-$dir = Join-Path $root ("latest-" + $stamp)
+$dir = Join-Path $root "latest"
 $tgz = Join-Path $root "coded-miner-windows-amd64-latest.tar.gz"
 $log = Join-Path $root "coded-miner.log"
 $analytics = Join-Path $root "coded-windows-analytics.ps1"
 
-New-Item -ItemType Directory -Force $root | Out-Null
+Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $dir | Out-Null
+New-Item -ItemType Directory -Force $root | Out-Null
 
 $url = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
 
@@ -559,26 +542,13 @@ Write-Host "Run ID:  $runId"
 Write-Host "Log:     $log"
 Write-Host ""
 
-# M1091V27F_RESTORE_CANONICAL_WITH_CMD_BRIDGE
-# Keep full V27C canonical analytics runner.
-# Use cmd.exe only for final miner stdio so stderr becomes plain stdout before PowerShell sees it.
-# This avoids NativeCommandError without using Windows 8-crashy async .NET handlers.
-function Quote-CmdArg([string]$x) {
-  if ($null -eq $x) { return '""' }
-  return '"' + ($x -replace '"','\"') + '"'
-}
-
-$cmdLine = (Quote-CmdArg $exe) +
-  " --pool " + (Quote-CmdArg $Pool) +
-  " --wallet " + (Quote-CmdArg $Wallet) +
-  " --worker " + (Quote-CmdArg $Worker) +
-  " --threads " + (Quote-CmdArg "$Threads") +
-  " 2>&1"
-
+# M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
+# Windows PowerShell can convert native stderr output into NativeCommandError when
+# $ErrorActionPreference="Stop". The miner prints normal runtime/status lines on
+# stderr on some Windows builds, so do not let stderr stop the public runner.
 $ErrorActionPreference = "Continue"
-
 try {
-  & $env:ComSpec /d /s /c $cmdLine | Tee-Object -FilePath $log -Append
+  & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | Tee-Object -FilePath $log -Append
 } finally {
   Write-Host ""
   Write-Host "CODED Miner process ended."
