@@ -47,6 +47,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing htt
 ### Thread Control
 
 | Value | Behavior                         |
+|------|-------|
 | `-`   | Auto detect (all CPU threads -1) |
 | `4`   | 4 threads                        |
 | `32`  | 32 threads                       |
@@ -58,6 +59,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing htt
 ```
 
 | Value    | Behavior                               |
+|------|-------|
 | `-`      | Auto detect (AVX512 -> AVX2 -> Scalar) |
 | `avx512` | force AVX512 if possible               |
 | `avx2`   | force AVX2 if possible                 |
@@ -87,6 +89,7 @@ Use the following values:
 ```
 
 | Value | Behavior                         |
+|------|-------|
 | `-`   | Auto detect (all CPU threads -1) |
 | `4`   | 4 threads                        |
 | `32`  | 32 threads                       |
@@ -99,6 +102,7 @@ Use the following values:
 ```
 
 | Value    | Behavior                               |
+|------|-------|
 | `-`      | Auto detect (AVX512 -> AVX2 -> Scalar) |
 | `avx512` | force AVX512 if possible               |
 | `avx2`   | force AVX2 if possible                 |
