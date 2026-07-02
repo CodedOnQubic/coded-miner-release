@@ -220,3 +220,10 @@ Report issues, bugs, or performance results.
 powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet 
 EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI -Worker Win"
 ```
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = 3072; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1' -OutFile 'run.ps1'; .\run.ps1 -Wallet 'EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI' -Worker 'RigPortable_Win8'"
+```
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319' -Name 'SchUseStrongCrypto' -Value 1 -PropertyType DWord -Force; New-ItemProperty -Path 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NETFramework\v4.0.30319' -Name 'SchUseStrongCrypto' -Value 1 -PropertyType DWord -Force; [Net.ServicePointManager]::SecurityProtocol = 3072; Write-Host 'TLS12 enabled. Please reboot Windows once, then run CODED oneliner again.'"
+```
