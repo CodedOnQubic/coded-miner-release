@@ -1,9 +1,9 @@
-# $0.01 IS CODED
+# CODED MINER 1.0 - because $0.01 IS CODED
 
 The official Qubic Miner for the CODED mining pool.
 
 
-## 👁️ Beta Release
+## 👁️🔥 Beta Release
 
 - Linux / Windows / Mac ARM supported  
 - HiveOS supported  
