@@ -221,7 +221,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing htt
 EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI -Worker Win"
 ```
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = 3072; $ProgressPreference='SilentlyContinue'; Invoke-WebRequest -UseBasicParsing 'https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1' -OutFile 'run.ps1'; .\run.ps1 -Wallet 'EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI' -Worker 'RigPortable_Win8'"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=3072;$ProgressPreference='SilentlyContinue';$wallet='EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI';$worker='RigPortable_Win8';$p=$env:TEMP+'\coded-run.ps1';(New-Object Net.WebClient).DownloadFile('https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1',$p);& $p -Wallet $wallet -Worker $worker"
 ```
 
 ```powershell
