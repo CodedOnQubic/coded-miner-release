@@ -9,6 +9,7 @@ param(
 
 # M1091V27_WINDOWS_PUBLIC_RUN_HIVE_ANALYTICS
 # M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
+# M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -85,8 +86,16 @@ function Write-CodedWindowsAnalytics([string]$Path) {
 param(
   [string]$LogFile,
   [string]$Api,
-  [string]$Token
+  [string]$Token,
+  [string]$Worker,
+  [string]$RigId,
+  [string]$Backend,
+  [int]$Threads,
+  [string]$RunId
 )
+
+# M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
+# Canonical Windows uploader compatible with Hive sidecar payloads.
 
 $ErrorActionPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = 3072
@@ -101,75 +110,338 @@ function Parse-Frame($line) {
   return $m
 }
 
-function F($m,$k) {
+function S($m,$k,$fallback) {
+  if ($m.ContainsKey($k) -and $m[$k] -and $m[$k] -ne "unknown" -and $m[$k] -ne "unset") { return [string]$m[$k] }
+  return $fallback
+}
+
+function F($m,$k,$fallback=0.0) {
   if ($m.ContainsKey($k)) {
     $x = 0.0
     if ([double]::TryParse(($m[$k] -replace ',','.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$x)) { return $x }
   }
-  return 0.0
+  return $fallback
 }
 
-function I($m,$k) {
+function I($m,$k,$fallback=0) {
   if ($m.ContainsKey($k)) {
     $x = 0
-    if ([int]::TryParse($m[$k], [ref]$x)) { return $x }
+    if ([int]::TryParse(([string]$m[$k]), [ref]$x)) { return $x }
+    $d = 0.0
+    if ([double]::TryParse(([string]$m[$k] -replace ',','.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { return [int]$d }
   }
-  return 0
+  return $fallback
+}
+
+function Frame-Object($m) {
+  $o = @{}
+  foreach ($k in $m.Keys) {
+    $raw = [string]$m[$k]
+    $iv = 0
+    $dv = 0.0
+    if ([int]::TryParse($raw, [ref]$iv)) {
+      $o[$k] = $iv
+    } elseif ([double]::TryParse(($raw -replace ',','.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$dv)) {
+      $o[$k] = $dv
+    } else {
+      $o[$k] = $raw
+    }
+  }
+  return $o
+}
+
+function Api-Url($api, $path) {
+  if (-not $api) { $api = "https://api.codedonqubic.com" }
+  $base = $api.TrimEnd("/")
+  if ($base.ToLower().EndsWith("/analytics") -and $path.ToLower().StartsWith("/analytics/")) {
+    $base = $base.Substring(0, $base.Length - 10)
+  }
+  return $base + $path
+}
+
+function Post-Json($path, $payload) {
+  try {
+    $json = $payload | ConvertTo-Json -Depth 16 -Compress
+    $wc = New-Object Net.WebClient
+    $wc.Headers["Content-Type"] = "application/json"
+    if ($Token) { $wc.Headers["Authorization"] = "Bearer $Token" }
+    $url = Api-Url $Api $path
+    $resp = $wc.UploadString($url, "POST", $json)
+    Write-Host "[M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS] $path ok resp=$($resp.Substring(0,[Math]::Min(160,$resp.Length)))"
+  } catch {
+    Write-Host "[M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS] $path fail $($_.Exception.Message)"
+  }
 }
 
 $last = ""
 while ($true) {
   try {
     if (Test-Path $LogFile) {
-      $lines = Get-Content $LogFile -ErrorAction SilentlyContinue
-      $frame = $lines | Where-Object { $_ -like '*[CODED_ANALYTICS_FRAME]*' } | Select-Object -Last 1
+      $frame = Get-Content $LogFile -ErrorAction SilentlyContinue |
+        Where-Object { $_ -like '*[CODED_ANALYTICS_FRAME]*' } |
+        Select-Object -Last 1
+
       if ($frame -and $frame -ne $last) {
         $last = $frame
         $m = Parse-Frame $frame
-        $payload = @{
-          source = "windows_public_runner"
-          marker = "M1091V27_WINDOWS_PUBLIC_RUN_HIVE_ANALYTICS"
-          ts = (Get-Date).ToUniversalTime().ToString("o")
-          run_id = $m["run_id"]
-          rig_id = $m["rig_id"]
-          worker = $m["worker"]
-          worker_name = $m["worker"]
-          backend = $m["backend"]
-          runtime_backend = $m["runtime_backend"]
-          platform = "windows-amd64"
-          threads = I $m "threads"
-          threshold = I $m "threshold"
-          phase = $m["phase"]
-          avg_hash_it_s_30s = F $m "avg_hash_it_s_30s"
-          hash_it_s = F $m "hash_it_s"
-          backend_hotloop_it_s = F $m "backend_hotloop_it_s"
-          pipeline_it_s = F $m "pipeline_it_s"
-          router_scoring_it_s = F $m "router_scoring_it_s"
-          qatum_fullscore_it_s = F $m "qatum_fullscore_it_s"
-          completed_batch_hashrate = F $m "completed_batch_hashrate"
-          raw_speed_quality = $m["raw_speed_quality"]
-          total_seen = I $m "total_seen"
-          total_pass = I $m "total_pass"
-          false_negative = I $m "false_negative"
-          real300 = I $m "real300"
-          real310 = I $m "real310"
-          real321 = I $m "real321"
-          max_real_score_seen = I $m "max_real_score_seen"
-          max_real_score_passed = I $m "max_real_score_passed"
-          score_mode = $m["score_mode"]
+        $now = (Get-Date).ToUniversalTime().ToString("o")
+
+        $workerName = S $m "worker" $Worker
+        if (-not $workerName) { $workerName = "windows-public" }
+
+        $rig = S $m "rig_id" $RigId
+        if (-not $rig -or $rig -eq "unknown") { $rig = $workerName }
+
+        $backendName = S $m "backend" $Backend
+        if (-not $backendName) { $backendName = "unknown" }
+
+        $runtimeBackend = S $m "runtime_backend" $backendName
+        $run = S $m "run_id" $RunId
+        if (-not $run) { $run = "WIN_" + $workerName }
+
+        $thr = I $m "threads" $Threads
+        $threshold = I $m "threshold" 509
+
+        $avgHash = F $m "avg_hash_it_s_30s" 0
+        $hashIts = F $m "hash_it_s" 0
+        $backendHot = F $m "backend_hotloop_it_s" 0
+        $pipeIts = F $m "pipeline_it_s" 0
+        $routerIts = F $m "router_scoring_it_s" 0
+        $qatumIts = F $m "qatum_fullscore_it_s" 0
+
+        $avgIts = $avgHash
+        if ($avgIts -le 0) { $avgIts = $hashIts }
+        if ($avgIts -le 0) { $avgIts = $backendHot }
+
+        $lastIts = $hashIts
+        if ($lastIts -le 0) { $lastIts = $avgIts }
+
+        $totalSeen = I $m "total_seen" 0
+        $totalPass = I $m "total_pass" 0
+        $totalAudited = I $m "total_audited" 0
+        $fullscoreIterations = I $m "fullscore_total_iterations" 0
+        if ($fullscoreIterations -gt $totalAudited) { $totalAudited = $fullscoreIterations }
+
+        $falseNegative = I $m "false_negative" 0
+
+        $real321 = I $m "real321" 0
+        $real310 = I $m "real310" 0
+        $real300 = I $m "real300" 0
+
+        $b300 = I $m "score_300_309" 0
+        $b310 = I $m "score_310_320" 0
+        $b321 = I $m "score_321_plus" 0
+
+        if ($b300 -le 0) { $b300 = I $m "qatum_all_score_300_309_count" 0 }
+        if ($b310 -le 0) { $b310 = I $m "qatum_all_score_310_320_count" 0 }
+        if ($b321 -le 0) { $b321 = I $m "qatum_all_score_321_plus_count" 0 }
+
+        if (($b300 + $b310 + $b321) -le 0 -and $real300 -gt 0) {
+          $b321 = $real321
+          $b310 = [Math]::Max(0, $real310 - $real321)
+          $b300 = [Math]::Max(0, $real300 - $real310)
         }
 
-        $json = $payload | ConvertTo-Json -Depth 8 -Compress
-        $wc = New-Object Net.WebClient
-        $wc.Headers["Content-Type"] = "application/json"
-        if ($Token) { $wc.Headers["Authorization"] = "Bearer $Token" }
+        $real300 = [Math]::Max($real300, $b300 + $b310 + $b321)
+        $real310 = [Math]::Max($real310, $b310 + $b321)
+        $real321 = [Math]::Max($real321, $b321)
 
-        foreach ($ep in @("runs-heartbeat","performance-snapshot","score-distribution")) {
-          try { $wc.UploadString(($Api.TrimEnd("/") + "/" + $ep), "POST", $json) | Out-Null } catch {}
+        if ($real300 -gt $totalAudited) { $totalAudited = $real300 }
+
+        $maxScore = I $m "max_real_score_seen" 0
+        $maxPassed = I $m "max_real_score_passed" 0
+        $maxSkip = I $m "max_real_score_audited_skip" 0
+        if ($maxPassed -le 0) { $maxPassed = $maxScore }
+        if ($maxSkip -le 0) { $maxSkip = $maxScore }
+
+        $passRate = 0
+        if ($totalSeen -gt 0) { $passRate = $totalPass / $totalSeen }
+
+        $frameObj = Frame-Object $m
+        $raw = @{
+          source = "M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS"
+          posted_at = $now
+          log = $LogFile
+          analytics_frame = $frameObj
+          windows_public_runner = $true
+          runtime_backend = $runtimeBackend
+          avg_hash_it_s_30s = $avgHash
+          hash_it_s = $hashIts
+          pipeline_it_s = $pipeIts
+          router_scoring_it_s = $routerIts
+          qatum_fullscore_it_s = $qatumIts
+          v11_max_real_score_seen = $maxScore
+          v11_score_mode = S $m "score_mode" ""
+          real_score_available = S $m "real_score_available" ""
         }
+
+        $heartbeat = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          status = "running"
+          live_status = "running"
+          threshold = $threshold
+          threads = $thr
+          backend = $backendName
+          active_backend = $backendName
+          avg_its = $avgIts
+          last_its = $lastIts
+          avg_hash_it_s_30s = $avgHash
+          hash_it_s = $hashIts
+          total_seen = $totalSeen
+          total_pass = $totalPass
+          total_skip = 0
+          total_audited = $totalAudited
+          false_negative = $falseNegative
+          max_real_score_seen = $maxScore
+          max_real_score_passed = $maxPassed
+          max_real_score_audited_skip = $maxSkip
+          pass_rate = $passRate
+          meta = $raw
+          raw = $raw
+        }
+
+        $perf = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          threshold = $threshold
+          backend = $backendName
+          active_backend = $backendName
+          threads = $thr
+          avg_its = $avgIts
+          last_its = $lastIts
+          avg_hash_it_s_30s = $avgHash
+          hash_it_s = $hashIts
+          backend_hotloop_it_s = $backendHot
+          pipeline_it_s = $pipeIts
+          router_scoring_it_s = $routerIts
+          qatum_fullscore_it_s = $qatumIts
+          raw_it_s = $avgHash
+          total_it_s = $avgHash
+          scoring_it_s = $routerIts
+          fullscore_it_s = $qatumIts
+          total_seen = $totalSeen
+          total_pass = $totalPass
+          total_audited = $totalAudited
+          fullscore_count = $totalAudited
+          false_negative = $falseNegative
+          real300 = $real300
+          real310 = $real310
+          real321 = $real321
+          max_real_score_seen = $maxScore
+          max_real_score_passed = $maxPassed
+          max_real_score_audited_skip = $maxSkip
+          router_name = "M1091D_T509_DISCOVERY"
+          priority_budget_matrix = "windows-public"
+          raw = $raw
+        }
+
+        $score = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          epoch = I $m "epoch" 0
+          backend = $backendName
+          cpu_model = "windows-public"
+          threshold = $threshold
+          threads = $thr
+          batch_size = I $m "batch_size" 0
+          audit_rate = 500
+          total_seen = $totalSeen
+          total_pass = $totalPass
+          total_skip = 0
+          total_audited = $totalAudited
+          false_negative = $falseNegative
+          max_score = $maxScore
+          max_pass_score = $maxPassed
+          max_audited_skip_score = $maxSkip
+          score_260_269 = 0
+          score_270_279 = 0
+          score_280_289 = 0
+          score_290_299 = 0
+          score_300_309 = $b300
+          score_310_320 = $b310
+          score_321_plus = $b321
+          real300 = $real300
+          real310 = $real310
+          real321 = $real321
+          raw = $raw
+        }
+
+        $priority = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          threshold = $threshold
+          priority_matrix = "windows-public"
+          priority_version = "M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS"
+          p0_seen = $totalSeen
+          p0_scored = $totalAudited
+          p0_skipped = 0
+          p0_score_rate = $(if ($totalSeen -gt 0) { $totalAudited / $totalSeen } else { 0 })
+          p0_real280 = 0
+          p0_real290 = 0
+          p0_real300 = $real300
+          p0_real310 = $real310
+          p0_real321 = $real321
+          p0_d300 = $real300
+          p0_d321 = $real321
+          p1_seen = 0; p1_scored = 0; p1_skipped = 0; p1_score_rate = 0; p1_real280 = 0; p1_real290 = 0; p1_real300 = 0; p1_real310 = 0; p1_real321 = 0; p1_d300 = 0; p1_d321 = 0
+          p2_seen = 0; p2_scored = 0; p2_skipped = 0; p2_score_rate = 0; p2_real280 = 0; p2_real290 = 0; p2_real300 = 0; p2_real310 = 0; p2_real321 = 0; p2_d300 = 0; p2_d321 = 0
+          p3_seen = 0; p3_scored = 0; p3_skipped = 0; p3_score_rate = 0; p3_real280 = 0; p3_real290 = 0; p3_real300 = 0; p3_real310 = 0; p3_real321 = 0; p3_d300 = 0; p3_d321 = 0
+          raw = $raw
+        }
+
+        $policy = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          threshold = $threshold
+          policy_name = "windows-public"
+          router_name = "windows-public"
+          pass = $totalPass
+          real280 = 0
+          real290 = 0
+          real300 = $real300
+          real310 = $real310
+          real321 = $real321
+          pass_per_seen = $(if ($totalSeen -gt 0) { $totalPass / $totalSeen } else { 0 })
+          real300_per_pass = $(if ($totalPass -gt 0) { $real300 / $totalPass } else { 0 })
+          real310_per_pass = $(if ($totalPass -gt 0) { $real310 / $totalPass } else { 0 })
+          raw = $raw
+        }
+
+        $histogram = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          threshold = $threshold
+          router_name = "windows-public"
+          priority_budget_matrix = "windows-public"
+          rows = @(
+            @{shadow_score=270; total=0; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=280; total=0; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=290; total=0; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=300; total=$b300; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=310; total=$b310; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=321; total=$b321; real300=$real300; real310=$real310; real321=$real321}
+          )
+          raw = $raw
+        }
+
+        Post-Json "/analytics/runs/heartbeat" $heartbeat
+        Post-Json "/analytics/performance-snapshot" $perf
+        Post-Json "/analytics/score-distribution-snapshot" $score
+        Post-Json "/analytics/priority-budget-snapshot" $priority
+        Post-Json "/analytics/shadow-policy-snapshot" $policy
+        Post-Json "/analytics/shadow-histogram-snapshot" $histogram
       }
     }
-  } catch {}
+  } catch {
+    Write-Host "[M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS] loop error $($_.Exception.Message)"
+  }
   Start-Sleep -Seconds 5
 }
 '@
@@ -241,7 +513,7 @@ $env:CODED_ANALYTICS_ENABLED = "1"
 $env:CODED_ANALYTICS_FRAME_SEC = "5"
 $env:CODED_LOG_FILE = $log
 $env:CODED_ANALYTICS_LOG = $log
-$env:CODED_ANALYTICS_API = if ($env:CODED_ANALYTICS_API) { $env:CODED_ANALYTICS_API } else { "https://api.codedonqubic.com/analytics" }
+$env:CODED_ANALYTICS_API = if ($env:CODED_ANALYTICS_API) { $env:CODED_ANALYTICS_API } else { "https://api.codedonqubic.com" }
 $env:CODED_ANALYTICS_TOKEN = if ($env:CODED_ANALYTICS_TOKEN) { $env:CODED_ANALYTICS_TOKEN } else { "coded_analytics_ingest_2026_secure_token" }
 
 Write-CodedWindowsAnalytics $analytics
@@ -253,7 +525,12 @@ Start-Process powershell -WindowStyle Minimized -ArgumentList @(
   "-File",$analytics,
   "-LogFile",$log,
   "-Api",$env:CODED_ANALYTICS_API,
-  "-Token",$env:CODED_ANALYTICS_TOKEN
+  "-Token",$env:CODED_ANALYTICS_TOKEN,
+  "-Worker",$Worker,
+  "-RigId",$Worker,
+  "-Backend",$selected,
+  "-Threads","$Threads",
+  "-RunId",$runId
 ) | Out-Null
 
 Write-Host "Starting CODED Miner"
