@@ -38,6 +38,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing htt
 ```
 
 ## ⚙️ Optional Parameters
+```json
+-avx2, -avx512, -1, -2, -3 etc
+```
 
 ### Thread Control
 
@@ -89,6 +92,9 @@ QUBIC_WALLET='YOUR_QUBIC_WALLET' QUBIC_WORKER='YOUR_WORKER_NAME' bash -c "$(curl
 ```
 
 ## ⚙️ Optional Parameters
+```json
+-avx2, -avx512, -1, -2, -3 etc
+```
 
 ### Thread Control
 
