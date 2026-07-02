@@ -2,11 +2,8 @@
 
 Qubic CPU Miner for the CODED mining pool.
 
----
 
-## ⚠️ Status
-
-This is a **beta release**.
+## 👁️ Beta Release
 
 - Linux / Windows / Mac ARM supported  
 - HiveOS supported  
