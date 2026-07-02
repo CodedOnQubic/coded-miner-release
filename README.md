@@ -1,143 +1,88 @@
 # CODED Miner
 
-Minimal CPU miner for the CODED mining pool.
+Start mining with one command.
 
----
+Replace:
 
-## ⚠️ Status
+- `YOUR_QUBIC_WALLET`
+- `YOUR_WORKER_NAME`
 
-This is a **test release**.
+## Windows
 
-- Native macOS (Apple Silicon) supported  
-- Docker (Linux / Windows / Intel Mac) supported  
-- HiveOS supported  
-- Pool connection working  
-- Worker reporting active  
-- Performance still evolving  
+Works in PowerShell and cmd.exe.
 
----
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME"
+```
 
-# 🚀 Quick Start (1-Click)
+Windows downloads the latest universal package:
 
-## 🍎 macOS (M1 / M2 / M3)
+```text
+coded-miner-windows-amd64-latest.tar.gz
+```
+
+The launcher selects the best backend automatically:
+
+```text
+AVX512 > AVX2 > scalar
+```
+
+## Linux
 
 ```bash
-WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
-```
-```bash
-WALLET=YOUR_WALLET \
-WORKER=Intel-Mac \
-CODED_ANALYTICS=yes \
-CODED_BUILDER=yes \
-CODED_BUILDER_TARGETS=macos-x64,docker-linux-amd64 \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?z257b=$(date +%s))"
+CODED_WALLET='YOUR_QUBIC_WALLET' CODED_WORKER='YOUR_WORKER_NAME' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
 
----
+## macOS
 
-## 🐳 Docker (Linux / Windows / Intel Mac)
+Apple Silicon / ARM64:
 
 ```bash
-wsl bash -lc 'WALLET="DEINE_WALLET_HIER" WORKER="Windows"  "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?z257b=$(date +%s))"'
+CODED_WALLET='YOUR_QUBIC_WALLET' CODED_WORKER='YOUR_WORKER_NAME' CODED_PLATFORM='macos-arm64' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
+
+## HiveOS
+
+### Hive Shell
 
 ```bash
-$env:WALLET="DEINE_QUBIC_WALLET_HIER"; $env:WORKER="WinScalar_Public_Test_01"; $env:CODED_ANALYTICS="YES"; $env:CODED_BACKEND="scalar"; $env:CODED_FORCE_FULLSCORE="1"; iwr -UseBasicParsing "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1?cb=$([int][double]::Parse((Get-Date -UFormat %s)))" | iex
+CODED_WALLET='YOUR_QUBIC_WALLET' CODED_WORKER='HIVE_WORKER_NAME' CODED_ANALYTICS='YES' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
 
-Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH.Server*'
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-Start-Service sshd
-Set-Service -Name sshd -StartupType Automatic
-New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
-hostname
-ipconfig
+### Hive Flight Sheet
 
----
-
-## ⚙️ Optional Parameters
+Use a Custom Miner / Custom Command and paste:
 
 ```bash
-WALLET=YOUR_WALLET \
-WORKER=my-rig \
-THREADS=4 \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
+CODED_WALLET='YOUR_QUBIC_WALLET' CODED_WORKER='HIVE_WORKER_NAME' CODED_ANALYTICS='YES' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
 
-### Thread Control
+## Optional
 
-| Value  | Behavior                |
-|--------|------------------------|
-| unset  | all CPUs - 1 (default) |
-| 1      | 1 thread               |
-| 4      | 4 threads              |
-| 0      | all CPUs - 1           |
+### Set threads manually on Windows
 
----
-
-# 🐝 HiveOS Flight Sheet Setup
-
-HiveOS → **Flight Sheet** → **Custom Miner** → **Expert Section**
-
-Use the following values:
-
-| Field | Value |
-|------|-------|
-| Miner name | `coded-miner` |
-| Installation URL | `https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz` |
-| Hash algorithm | `----` |
-| Wallet and worker template | `%WAL%-%WORKER_NAME%` |
-| Pool URL | `pool.codedonqubic.com:7777` |
-| Pass | leave empty |
-| Extra config arguments | `{"amountOfThreads":32}` |
-
-### Thread Control in HiveOS
-
-```json
-{"amountOfThreads":32}
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME -Threads 15"
 ```
 
-| Value | Behavior |
-|------|----------|
-| `1` | 1 thread |
-| `4` | 4 threads |
-| `32` | 32 threads |
-| `0` | all CPUs minus 1 |
+### Force AVX2 on Windows
 
----
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME -Backend avx2"
+```
 
-# 📡 Dashboard
+### Set threads manually on Linux / macOS / HiveOS
 
-Workers appear automatically:
+```bash
+CODED_WALLET='YOUR_QUBIC_WALLET' CODED_WORKER='YOUR_WORKER_NAME' CODED_THREADS='15' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
+```
 
-- Worker name  
-- Wallet  
-- Status  
-- Hashrate  
+## Repository contents
 
-👉 https://codedonqubic.com/pool
+This repository intentionally stays clean and only contains:
 
----
-
-# ⚙️ Notes
-
-- CPU mining only (auto-detect AVX2 / AVX512)  
-- Native macOS ARM build (no Docker required)  
-- Docker fallback for all other systems  
-- CUDA backend not active yet  
-
----
-
-# 🔒 Security
-
-- No private keys required  
-- Wallet is used for identification only  
-- Binary-only release  
-
----
-
-# 📣 Feedback
-
-This is an early test release.
-
-Report issues, bugs, or performance results.
+```text
+README.md
+run.ps1
+run.sh
+```
