@@ -2,6 +2,7 @@
 set -euo pipefail
 
 # M1091V28_LINUX_MAC_PUBLIC_RUNNER_CANONICAL_ANALYTICS
+# M1091V28B_NO_THRESHOLD_CLI_MAC_ASSET_FALLBACKS
 # Public Linux/macOS runner:
 # - Linux x86_64 downloads coded-miner-latest.tar.gz
 # - Mac ARM downloads coded-miner-macos-arm64.tar.gz
@@ -60,10 +61,12 @@ case "$OS/$ARCH" in
   darwin/arm64|darwin/aarch64)
     PLATFORM="macos-arm64"
     ASSET_URL="${CODED_MAC_ARM_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz}"
+    ASSET_URLS="${CODED_MAC_ARM_LATEST_URLS:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest-macos-arm64.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64.tar.gz}"
     ;;
   linux/x86_64|linux/amd64)
     PLATFORM="linux-amd64"
     ASSET_URL="${CODED_LINUX_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz}"
+    ASSET_URLS="${CODED_LINUX_LATEST_URLS:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz}"
     ;;
   *)
     echo "ERROR: unsupported platform $OS/$ARCH"
@@ -113,7 +116,23 @@ pkill -f "coded-miner-scalar.*--worker ${WORKER_SAFE}" 2>/dev/null || true
 echo "Downloading latest CODED package..."
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
-curl -fL "$ASSET_URL" -o "$TAR_FILE"
+
+DOWNLOAD_OK=0
+for u in ${ASSET_URLS:-$ASSET_URL}; do
+  echo "Trying asset: $u"
+  if curl -fL "$u" -o "$TAR_FILE"; then
+    DOWNLOAD_OK=1
+    ASSET_URL="$u"
+    break
+  fi
+done
+
+if [ "$DOWNLOAD_OK" != "1" ]; then
+  echo "ERROR: could not download CODED package for $PLATFORM"
+  echo "Tried: ${ASSET_URLS:-$ASSET_URL}"
+  exit 1
+fi
+
 tar -xzf "$TAR_FILE" -C "$TMP_DIR"
 
 ROOT="$TMP_DIR"
@@ -199,7 +218,6 @@ env \
     --wallet "$WALLET" \
     --worker "$WORKER_SAFE" \
     --threads "$THREADS" \
-    --threshold "$THRESHOLD" \
   >> "$RUN_LOG" 2>&1 &
 MINER_PID=$!
 echo "$MINER_PID" > "$PID_DIR/miner.pid"
