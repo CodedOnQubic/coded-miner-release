@@ -4,12 +4,15 @@ param(
   [int]$Threads = 0,
   [ValidateSet("auto","scalar","avx2","avx512")]
   [string]$Backend = "auto",
-  [string]$Pool = $env:CODED_POOL
+  [string]$Pool = $env:CODED_POOL,
+  [Parameter(ValueFromRemainingArguments=$true)]
+  [string[]]$ExtraArgs
 )
 
 # M1091V27_WINDOWS_PUBLIC_RUN_HIVE_ANALYTICS
 # M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
 # M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
+# M1091V27I_WINDOWS_SHORT_ARGS
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -449,6 +452,31 @@ while ($true) {
 }
 
 Enable-CodedTls
+
+# M1091V27I_WINDOWS_SHORT_ARGS
+# Support public README shorthand:
+#   -avx2 -2
+#   -avx512 -31
+#   -scalar -1
+# Canonical long form still works:
+#   -Backend avx2 -Threads 2
+if ($ExtraArgs) {
+  foreach ($arg in $ExtraArgs) {
+    $a = ([string]$arg).Trim()
+    if (!$a) { continue }
+
+    switch -Regex ($a.ToLowerInvariant()) {
+      '^-avx2$'   { $Backend = "avx2"; continue }
+      '^-avx512$' { $Backend = "avx512"; continue }
+      '^-scalar$' { $Backend = "scalar"; continue }
+      '^-auto$'   { $Backend = "auto"; continue }
+      '^-threads=(\d+)$' { $Threads = [int]$Matches[1]; continue }
+      '^-t=(\d+)$'       { $Threads = [int]$Matches[1]; continue }
+      '^-(\d+)$'         { $Threads = [int]$Matches[1]; continue }
+      '^(\d+)$'          { $Threads = [int]$Matches[1]; continue }
+    }
+  }
+}
 
 if (-not $Pool) { $Pool = "pool.codedonqubic.com:7777" }
 if (-not $Wallet) { $Wallet = Read-Host "Qubic wallet address" }
