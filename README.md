@@ -46,8 +46,9 @@ WinAVX2
 
 Automatic backend and thread optimization:
 
+
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME"
+powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME"
 ```
 
 ## Manual Mode
@@ -57,7 +58,7 @@ Optional backend and thread control.
 Example: force AVX2 and use 10 threads.
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME -avx2 -10"
+powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME -avx2 -10"
 ```
 
 ## Optional Parameters
@@ -216,20 +217,7 @@ This is an early beta release.
 
 Report issues, bugs, or performance results.
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet 
-EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI -Worker Win"
-```
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol=3072;$ProgressPreference='SilentlyContinue';$wallet='EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI';$worker='RigPortable_Win8';$p=$env:TEMP+'\coded-run.ps1';(New-Object Net.WebClient).DownloadFile('https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1',$p);& $p -Wallet $wallet -Worker $worker"
-```
 
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319' -Name 'SchUseStrongCrypto' -Value 1 -PropertyType DWord -Force; New-ItemProperty -Path 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NETFramework\v4.0.30319' -Name 'SchUseStrongCrypto' -Value 1 -PropertyType DWord -Force; [Net.ServicePointManager]::SecurityProtocol = 3072; Write-Host 'TLS12 enabled. Please reboot Windows once, then run CODED oneliner again.'"
-```
-```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop';[Net.ServicePointManager]::SecurityProtocol=3072;$w='EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI';$wk='RigPortable_Win8';$root=Join-Path $env:TEMP 'coded-miner-win8';$dir=Join-Path $root 'latest';$url='https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz';Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue;New-Item -ItemType Directory -Force $dir|Out-Null;$tgz=Join-Path $root 'coded.tar.gz';$tar=Join-Path $root 'coded.tar';Write-Host 'Downloading CODED Windows latest...';(New-Object Net.WebClient).DownloadFile($url,$tgz);Write-Host 'Decompressing gzip...';$i=[IO.File]::OpenRead($tgz);$g=New-Object IO.Compression.GzipStream($i,[IO.Compression.CompressionMode]::Decompress);$o=[IO.File]::Create($tar);$buf=New-Object byte[] 65536;while(($r=$g.Read($buf,0,$buf.Length))-gt 0){$o.Write($buf,0,$r)};$o.Close();$g.Close();$i.Close();Write-Host 'Extracting tar without tar.exe...';$fs=[IO.File]::OpenRead($tar);$h=New-Object byte[] 512;while(($rr=$fs.Read($h,0,512))-eq 512){$name=([Text.Encoding]::ASCII.GetString($h,0,100)).Trim([char]0);if(!$name){break};$so=([Text.Encoding]::ASCII.GetString($h,124,12)).Trim([char]0,' ');$sz=0;if($so){$sz=[Convert]::ToInt64($so,8)};$type=[char]$h[156];$path=Join-Path $dir (($name -replace '^\./','') -replace '/','\');if($type -eq '5'){New-Item -ItemType Directory -Force $path|Out-Null}else{New-Item -ItemType Directory -Force (Split-Path $path) -ErrorAction SilentlyContinue|Out-Null;$of=[IO.File]::Create($path);$left=$sz;$c=New-Object byte[] 65536;while($left -gt 0){$n=$fs.Read($c,0,[Math]::Min($c.Length,$left));if($n -le 0){break};$of.Write($c,0,$n);$left-=$n};$of.Close();$skip=(512-($sz%512))%512;if($skip){$fs.Seek($skip,[IO.SeekOrigin]::Current)|Out-Null}}};$fs.Close();$start=Join-Path $dir 'start.ps1';if(!(Test-Path $start)){Write-Host 'Extracted files:';dir $dir -Recurse;throw 'start.ps1 not found'};Write-Host 'Starting CODED Miner...';& $start -Wallet $w -Worker $wk -Threads 0 -Backend auto"
-```
 ```powershell
 powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI -Worker RigPortable_Win8"
 ```
