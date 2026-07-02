@@ -1,81 +1,70 @@
-# CODED Miner
+# CODED Miner for Qubic
 
-Minimal CPU miner for the CODED mining pool.
+Qubic CPU miner for the CODED mining pool.
 
 ---
 
 ## ⚠️ Status
 
-This is a **test release**.
+This is a **beta release**.
 
-- Native macOS (Apple Silicon) supported  
-- Docker (Linux / Windows / Intel Mac) supported  
+- Linux / Windows / Mac ARM supported  
 - HiveOS supported  
-- Pool connection working  
-- Worker reporting active  
-- Performance still evolving  
+- Performance still evolving
+- CPU mining only (auto-detect AVX2 / AVX512)
+- CUDA backend not active yet 
 
 ---
 
 # 🚀 Quick Start (1-Click)
 
-## 🍎 macOS (M1 / M2 / M3)
+## MAC (M1 / M2 / M3)
 
 ```bash
 WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
 ```
-```bash
-WALLET=YOUR_WALLET \
-WORKER=Intel-Mac \
-CODED_ANALYTICS=yes \
-CODED_BUILDER=yes \
-CODED_BUILDER_TARGETS=macos-x64,docker-linux-amd64 \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?z257b=$(date +%s))"
-```
 
 ---
 
-## 🐳 Docker (Linux / Windows / Intel Mac)
+## Windows
 
 ```bash
 wsl bash -lc 'WALLET="DEINE_WALLET_HIER" WORKER="Windows"  "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?z257b=$(date +%s))"'
 ```
 
-```bash
-$env:WALLET="DEINE_QUBIC_WALLET_HIER"; $env:WORKER="WinScalar_Public_Test_01"; $env:CODED_ANALYTICS="YES"; $env:CODED_BACKEND="scalar"; $env:CODED_FORCE_FULLSCORE="1"; iwr -UseBasicParsing "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1?cb=$([int][double]::Parse((Get-Date -UFormat %s)))" | iex
-```
-
-Get-WindowsCapability -Online | Where-Object Name -like 'OpenSSH.Server*'
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-Start-Service sshd
-Set-Service -Name sshd -StartupType Automatic
-New-NetFirewallRule -Name sshd -DisplayName 'OpenSSH Server' -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
-hostname
-ipconfig
-
 ---
+
+## Linux
+
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME"
+```
+---
+
 
 ## ⚙️ Optional Parameters
 
-```bash
-WALLET=YOUR_WALLET \
-WORKER=my-rig \
-THREADS=4 \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
-```
-
 ### Thread Control
 
-| Value  | Behavior                |
-|--------|------------------------|
-| unset  | all CPUs - 1 (default) |
-| 1      | 1 thread               |
-| 4      | 4 threads              |
-| 0      | all CPUs - 1           |
+| Value | Behavior                         |
+| `-`   | Auto detect (all CPU threads -1) |
+| `4`   | 4 threads                        |
+| `32`  | 32 threads                       |
+
+### Backend Control 
+
+```json
+{"cpu":avx2}, {"cpu":avx512}
+```
+
+| Value    | Behavior                               |
+| `-`      | Auto detect (AVX512 -> AVX2 -> Scalar) |
+| `avx512` | force AVX512 if possible               |
+| `avx2`   | force AVX2 if possible                 |
 
 ---
 
-# 🐝 HiveOS Flight Sheet Setup
+# HiveOS Flight Sheet Setup
 
 HiveOS → **Flight Sheet** → **Custom Miner** → **Expert Section**
 
@@ -89,7 +78,7 @@ Use the following values:
 | Wallet and worker template | `%WAL%-%WORKER_NAME%` |
 | Pool URL | `pool.codedonqubic.com:7777` |
 | Pass | leave empty |
-| Extra config arguments | `{"amountOfThreads":32}` |
+| Extra config arguments | `{"amountOfThreads":16,"cpu":"avx2"}` |
 
 ### Thread Control in HiveOS
 
@@ -97,12 +86,23 @@ Use the following values:
 {"amountOfThreads":32}
 ```
 
-| Value | Behavior |
-|------|----------|
-| `1` | 1 thread |
-| `4` | 4 threads |
-| `32` | 32 threads |
-| `0` | all CPUs minus 1 |
+| Value | Behavior                         |
+| `-`   | Auto detect (all CPU threads -1) |
+| `4`   | 4 threads                        |
+| `32`  | 32 threads                       |
+
+
+### Backend Control in HiveOS
+
+```json
+{"cpu":avx2}, {"cpu":avx512}
+```
+
+| Value    | Behavior                               |
+| `-`      | Auto detect (AVX512 -> AVX2 -> Scalar) |
+| `avx512` | force AVX512 if possible               |
+| `avx2`   | force AVX2 if possible                 |
+
 
 ---
 
@@ -117,18 +117,10 @@ Workers appear automatically:
 
 👉 https://codedonqubic.com/pool
 
+ 
 ---
 
-# ⚙️ Notes
-
-- CPU mining only (auto-detect AVX2 / AVX512)  
-- Native macOS ARM build (no Docker required)  
-- Docker fallback for all other systems  
-- CUDA backend not active yet  
-
----
-
-# 🔒 Security
+# Security
 
 - No private keys required  
 - Wallet is used for identification only  
@@ -136,7 +128,7 @@ Workers appear automatically:
 
 ---
 
-# 📣 Feedback
+# Feedback
 
 This is an early test release.
 
