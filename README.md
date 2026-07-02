@@ -1,6 +1,6 @@
 # $0.01 IS CODED
 
-Qubic CPU Miner for the CODED mining pool.
+The official Qubic Miner for the CODED mining pool.
 
 
 ## 👁️ Beta Release
