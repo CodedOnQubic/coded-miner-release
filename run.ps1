@@ -8,6 +8,7 @@ param(
 )
 
 # M1091V27_WINDOWS_PUBLIC_RUN_HIVE_ANALYTICS
+# M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -264,4 +265,14 @@ Write-Host "Run ID:  $runId"
 Write-Host "Log:     $log"
 Write-Host ""
 
-& $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | Tee-Object -FilePath $log -Append
+# M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
+# Windows PowerShell can convert native stderr output into NativeCommandError when
+# $ErrorActionPreference="Stop". The miner prints normal runtime/status lines on
+# stderr on some Windows builds, so do not let stderr stop the public runner.
+$ErrorActionPreference = "Continue"
+try {
+  & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | Tee-Object -FilePath $log -Append
+} finally {
+  Write-Host ""
+  Write-Host "CODED Miner process ended."
+}
