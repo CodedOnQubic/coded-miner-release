@@ -10,6 +10,7 @@ param(
 # M1091V27_WINDOWS_PUBLIC_RUN_HIVE_ANALYTICS
 # M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
 # M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
+# M1091V27D_WINDOWS_PROCESS_STDIO_BRIDGE
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -542,14 +543,59 @@ Write-Host "Run ID:  $runId"
 Write-Host "Log:     $log"
 Write-Host ""
 
-# M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
-# Windows PowerShell can convert native stderr output into NativeCommandError when
-# $ErrorActionPreference="Stop". The miner prints normal runtime/status lines on
-# stderr on some Windows builds, so do not let stderr stop the public runner.
-$ErrorActionPreference = "Continue"
+# M1091V27D_WINDOWS_PROCESS_STDIO_BRIDGE
+# Do not use PowerShell native stderr redirection here.
+# Windows PowerShell can wrap normal native stderr lines as NativeCommandError.
+# Use .NET ProcessStartInfo instead and tee stdout/stderr as plain text.
+function Quote-Arg([string]$x) {
+  if ($null -eq $x) { return '""' }
+  return '"' + ($x -replace '"','\"') + '"'
+}
+
+$minerArgs = @(
+  "--pool", $Pool,
+  "--wallet", $Wallet,
+  "--worker", $Worker,
+  "--threads", "$Threads"
+)
+
+$psi = New-Object System.Diagnostics.ProcessStartInfo
+$psi.FileName = $exe
+$psi.UseShellExecute = $false
+$psi.RedirectStandardOutput = $true
+$psi.RedirectStandardError = $true
+$psi.CreateNoWindow = $false
+$psi.WorkingDirectory = $dir
+$psi.Arguments = (($minerArgs | ForEach-Object { Quote-Arg ([string]$_) }) -join " ")
+
+$proc = New-Object System.Diagnostics.Process
+$proc.StartInfo = $psi
+
+$logWriter = New-Object System.IO.StreamWriter($log, $true)
+$logWriter.AutoFlush = $true
+
+$handler = [System.Diagnostics.DataReceivedEventHandler]{
+  param($sender, $eventArgs)
+  if ($null -ne $eventArgs.Data) {
+    Write-Host $eventArgs.Data
+    try {
+      $script:logWriter.WriteLine($eventArgs.Data)
+      $script:logWriter.Flush()
+    } catch {}
+  }
+}
+
+$proc.add_OutputDataReceived($handler)
+$proc.add_ErrorDataReceived($handler)
+
 try {
-  & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | Tee-Object -FilePath $log -Append
+  [void]$proc.Start()
+  $proc.BeginOutputReadLine()
+  $proc.BeginErrorReadLine()
+  $proc.WaitForExit()
+  $exitCode = $proc.ExitCode
 } finally {
+  try { $logWriter.Flush(); $logWriter.Close() } catch {}
   Write-Host ""
   Write-Host "CODED Miner process ended."
 }
