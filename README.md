@@ -1,6 +1,6 @@
-# CODED Miner for Qubic
+# $0.01 IS CODED
 
-Qubic CPU miner for the CODED mining pool.
+Qubic CPU Miner for the CODED mining pool.
 
 ---
 
@@ -16,31 +16,25 @@ This is a **beta release**.
 
 ---
 
+
+
 # 🚀 Quick Start (1-Click)
-
-## MAC (M1 / M2 / M3)
-
-```bash
-WALLET=YOUR_WALLET WORKER=my-mac bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
-```
-
----
 
 ## Windows
 
-```bash
-wsl bash -lc 'WALLET="DEINE_WALLET_HIER" WORKER="Windows"  "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh?z257b=$(date +%s))"'
-```
+- Press Win+R and type cmd.exe
+- Paste in the onliner
+- Set your own Qubic Wallet and a public worker name for your local machine
 
----
-
-## Linux
-
+### Auto Performance Mode (Automatic backend and thread optimization)
 ```bash
 powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME"
 ```
----
 
+###  (Optional) Manual backend and thread control
+```bash
+powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile run.ps1; .\run.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME -avx2 -10"
+```
 
 ## ⚙️ Optional Parameters
 
@@ -48,23 +42,69 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "iwr -UseBasicParsing htt
 
 | Value | Behavior                         |
 |------|-------|
-| `-`   | Auto detect (all CPU threads -1) |
-| `4`   | 4 threads                        |
-| `32`  | 32 threads                       |
+| ` `   | Auto detect (all CPU threads -1) |
+| `-4`   | 4 threads                        |
+| `-32`  | 32 threads                       |
 
 ### Backend Control 
 
-```json
-{"cpu":avx2}, {"cpu":avx512}
-```
-
-| Value    | Behavior                               |
+| Value    | Behavior                                |
 |------|-------|
-| `-`      | Auto detect (AVX512 -> AVX2 -> Scalar) |
-| `avx512` | force AVX512 if possible               |
-| `avx2`   | force AVX2 if possible                 |
+| `-`      | Auto detect (AVX512 -> AVX2 -> Scalar)  |
+| `-avx512` | force AVX512 if possible               |
+| `-avx2`   | force AVX2 if possible                 |
 
 ---
+
+
+## MAC (M1 / M2 / M3)
+
+- Open the terminal app on your mac and paste in the onliner
+- Set your own Qubic Wallet and a public worker name for your Machine
+
+### Performance Mode (Automatic backend and thread optimization )
+```bash
+WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
+```
+
+---
+
+
+## Linux
+
+- Open the command on your machine and paste in the onliner
+- Set your own Qubic Wallet and a public worker name for your local Machine
+
+### Auto Performance Mode (Automatic backend and threads optimization)
+```bash
+WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
+```
+
+###  (Optional) Manual backend and threads control
+```bash
+QUBIC_WALLET='YOUR_QUBIC_WALLET' QUBIC_WORKER='YOUR_WORKER_NAME' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- -avx2 -10
+```
+
+## ⚙️ Optional Parameters
+
+### Thread Control
+
+| Value | Behavior                         |
+|------|-------|
+| ` `   | Auto detect (all CPU threads -1) |
+| `-4`   | 4 threads                        |
+| `-32`  | 32 threads                       |
+
+### Backend Control 
+
+| Value    | Behavior                                |
+|------|-------|
+| `-`      | Auto detect (AVX512 -> AVX2 -> Scalar)  |
+| `-avx512` | force AVX512 if possible               |
+| `-avx2`   | force AVX2 if possible                 |
+
+---
+
 
 # HiveOS Flight Sheet Setup
 
