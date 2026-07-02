@@ -11,6 +11,7 @@ param(
 # M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
 # M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
 # M1091V27F_RESTORE_CANONICAL_WITH_CMD_BRIDGE
+# M1091V27G_WINDOWS_STOP_OLD_MINER_UNIQUE_DIR
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -458,14 +459,29 @@ if ($Threads -le 0) { $Threads = [Math]::Max(1, [Environment]::ProcessorCount - 
 
 $base = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "CODED" } else { Join-Path $env:TEMP "CODED" }
 $root = Join-Path $base "miner"
-$dir = Join-Path $root "latest"
+
+# M1091V27G_WINDOWS_STOP_OLD_MINER_UNIQUE_DIR
+# Windows locks running .exe files. Stop previous CODED miner processes before extracting.
+# Also extract into a unique folder per launch so a locked old latest folder cannot break startup.
+try {
+  Get-Process coded-miner, coded-miner-avx2, coded-miner-avx512, coded-miner-scalar -ErrorAction SilentlyContinue |
+    Stop-Process -Force -ErrorAction SilentlyContinue
+} catch {}
+
+try {
+  Get-WmiObject Win32_Process |
+    Where-Object { $_.CommandLine -like "*coded-windows-analytics.ps1*" -and $_.ProcessId -ne $PID } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+} catch {}
+
+$stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd_HHmmss")
+$dir = Join-Path $root ("latest-" + $stamp)
 $tgz = Join-Path $root "coded-miner-windows-amd64-latest.tar.gz"
 $log = Join-Path $root "coded-miner.log"
 $analytics = Join-Path $root "coded-windows-analytics.ps1"
 
-Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force $dir | Out-Null
 New-Item -ItemType Directory -Force $root | Out-Null
+New-Item -ItemType Directory -Force $dir | Out-Null
 
 $url = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
 
