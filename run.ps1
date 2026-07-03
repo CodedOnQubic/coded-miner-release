@@ -13,6 +13,7 @@ param(
 # M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
 # M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
 # M1091V27I_WINDOWS_SHORT_ARGS
+# M1091V34F_WINDOWS_PUBLIC_LOG_ONLY
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -546,6 +547,115 @@ $env:CODED_ANALYTICS_TOKEN = if ($env:CODED_ANALYTICS_TOKEN) { $env:CODED_ANALYT
 
 Write-CodedWindowsAnalytics $analytics
 
+
+function Format-CodedPublicRate($Value) {
+  try { $v = [double]$Value } catch { return "0" }
+
+  if ($v -ge 1000000000) { return ("{0:N2}B" -f ($v / 1000000000)) }
+  if ($v -ge 1000000) { return ("{0:N2}M" -f ($v / 1000000)) }
+  if ($v -ge 1000) { return ("{0:N1}K" -f ($v / 1000)) }
+  return ("{0:N0}" -f $v)
+}
+
+function Get-CodedPublicMap([string]$Line) {
+  $m = @{}
+  foreach ($match in [regex]::Matches($Line, '([A-Za-z0-9_]+)=("[^"]*"|[^ ]+)')) {
+    $k = $match.Groups[1].Value
+    $v = $match.Groups[2].Value.Trim('"')
+    $m[$k] = $v
+  }
+  return $m
+}
+
+function Get-CodedPublicValue($Map, [string]$Key, $Fallback) {
+  if ($Map.ContainsKey($Key) -and $Map[$Key] -and $Map[$Key] -ne "unknown" -and $Map[$Key] -ne "unset") {
+    return $Map[$Key]
+  }
+  return $Fallback
+}
+
+function Get-CodedPublicBackend($Raw) {
+  $b = ([string]$Raw).ToLower()
+  if ($b -match "avx512") { return "AVX512" }
+  if ($b -match "avx2") { return "AVX2" }
+  if ($b -match "arm|neon") { return "ARM" }
+  if ($b -match "cuda") { return "CUDA" }
+  return "SCALAR"
+}
+
+function Write-CodedPublicBrand {
+  $title = '$0.01  IS  CODED'
+  $width = 78
+  $line = "=" * $width
+  $pad = [Math]::Max(0, $width - $title.Length)
+  $left = [Math]::Floor($pad / 2)
+  $right = $pad - $left
+
+  Write-Host ""
+  Write-Host ("+" + $line + "+")
+  Write-Host ("|" + (" " * $left) + $title + (" " * $right) + "|")
+  Write-Host ("+" + $line + "+")
+  Write-Host ""
+}
+
+$script:CODED_PUBLIC_HEADER_PRINTED = $false
+$script:CODED_PUBLIC_LINE_COUNT = 0
+$script:CODED_PUBLIC_LAST_SIG = ""
+
+function Write-CodedPublicFrame([string]$Line) {
+  if ($Line -notmatch "CODED_ANALYTICS_FRAME") { return }
+
+  $sig = [string]$Line.GetHashCode()
+  if ($sig -eq $script:CODED_PUBLIC_LAST_SIG) { return }
+  $script:CODED_PUBLIC_LAST_SIG = $sig
+
+  $m = Get-CodedPublicMap $Line
+
+  $backendRaw = Get-CodedPublicValue $m "backend" $selected
+  $backend = Get-CodedPublicBackend $backendRaw
+
+  $epoch = Get-CodedPublicValue $m "epoch" "?"
+  $total = Get-CodedPublicValue $m "hash_it_s" (Get-CodedPublicValue $m "total_it_s" 0)
+  $avg = Get-CodedPublicValue $m "avg_hash_it_s_30s" (Get-CodedPublicValue $m "avg_it_s" $total)
+
+  $sols = Get-CodedPublicValue $m "total_pass" 0
+  $accepted = Get-CodedPublicValue $m "accepted" 0
+  $rejected = Get-CodedPublicValue $m "rejected" 0
+
+  if (-not $script:CODED_PUBLIC_HEADER_PRINTED) {
+    Write-CodedPublicBrand
+    Write-Host "CODED PUBLIC MINER"
+    Write-Host ("wallet  : " + $Wallet)
+    Write-Host ("worker  : " + $Worker)
+    Write-Host ("threads : " + $Threads)
+    Write-Host ("backend : " + $backend)
+    Write-Host ("epoch   : " + $epoch)
+    Write-Host ""
+    $script:CODED_PUBLIC_HEADER_PRINTED = $true
+  }
+
+  if (($script:CODED_PUBLIC_LINE_COUNT -gt 0) -and (($script:CODED_PUBLIC_LINE_COUNT % 9) -eq 0)) {
+    Write-CodedPublicBrand
+  }
+
+  $clock = Get-Date -Format "HH:mm:ss"
+  $totalText = Format-CodedPublicRate $total
+  $avgText = Format-CodedPublicRate $avg
+
+  $body = "$clock E:$epoch | SOLS $sols/$accepted R:$rejected | $backend | $totalText it/s | AVG $avgText it/s"
+  $logo = '[$0.01]'
+  $width = 78
+  $gap = $width - $logo.Length - $body.Length
+  if ($gap -lt 1) { $gap = 1 }
+
+  $out = $logo + (" " * $gap) + $body
+  if ($out.Length -gt $width) { $out = $out.Substring(0, $width) }
+
+  Write-Host $out
+  $script:CODED_PUBLIC_LINE_COUNT += 1
+}
+
+
 Write-Host "Starting analytics uploader..."
 Start-Process powershell -WindowStyle Minimized -ArgumentList @(
   "-NoProfile",
@@ -576,7 +686,11 @@ Write-Host ""
 # stderr on some Windows builds, so do not let stderr stop the public runner.
 $ErrorActionPreference = "Continue"
 try {
-  & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | Tee-Object -FilePath $log -Append
+  & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | ForEach-Object {
+    $line = [string]$_
+    $line | Out-File -FilePath $log -Append -Encoding utf8
+    Write-CodedPublicFrame $line
+  }
 } finally {
   Write-Host ""
   Write-Host "CODED Miner process ended."
