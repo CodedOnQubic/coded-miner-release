@@ -135,6 +135,7 @@ ANALYTICS_LOG="$LOG_DIR/ANALYTICS_${RUN_ID}.log"
 # M1091V33B_PUBLIC_LOADER_SILENT_UPDATE
 # M1091V33C_SMOOTH_FULL_WIDTH_LOADER
 # M1091V33D_GREEN_LOADER_STATUS_LINE
+# M1091V33F_PUBLIC_CONSOLE_FROM_RELEASE_REPO
 # M1091V33E_SHORTER_LOADER_SEQUENCE
 CODED_PUBLIC_BOOT_SEC="${CODED_PUBLIC_BOOT_SEC:-10}"
 CODED_PUBLIC_BOOT_STATUS="${CODED_PUBLIC_BOOT_STATUS:-Initializing latest CODED MINER}"
@@ -378,7 +379,7 @@ coded_ensure_public_console() {
     return 0
   fi
 
-  local console_url="${CODED_PUBLIC_CONSOLE_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner/m1091v6-clean-hive-autostart/release/hiveos/coded-miner/coded-public-console.py}"
+  local console_url="${CODED_PUBLIC_CONSOLE_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-public-console.py}"
 
   if command -v curl >/dev/null 2>&1; then
     curl -fsSL --retry 3 "$console_url" -o "$INSTALL_DIR/coded-public-console.py" 2>/dev/null || true
