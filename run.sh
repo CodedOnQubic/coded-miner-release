@@ -134,6 +134,7 @@ ANALYTICS_LOG="$LOG_DIR/ANALYTICS_${RUN_ID}.log"
 
 # M1091V33B_PUBLIC_LOADER_SILENT_UPDATE
 # M1091V33C_SMOOTH_FULL_WIDTH_LOADER
+# M1091V33D_GREEN_LOADER_STATUS_LINE
 CODED_PUBLIC_BOOT_SEC="${CODED_PUBLIC_BOOT_SEC:-15}"
 CODED_PUBLIC_BOOT_STATUS="${CODED_PUBLIC_BOOT_STATUS:-Initializing latest CODED MINER}"
 
@@ -182,30 +183,16 @@ width = 78
 percent = max(0, min(100, percent))
 fill = int(width * percent / 100)
 
-bar = list(("█" * fill) + ("░" * (width - fill)))
-label = f" {percent:3d}% "
-pos = max(0, (width - len(label)) // 2)
-
-for i, ch in enumerate(label):
-    if pos + i < width:
-        bar[pos + i] = ch
-
-plain = "".join(bar)
-left = plain[:pos]
-mid = plain[pos:pos + len(label)]
-right = plain[pos + len(label):]
-
-if percent < 50:
-    bar_color = "\033[38;5;45m"
-    label_color = "\033[30;107m"
-else:
-    bar_color = "\033[38;5;46m"
-    label_color = "\033[30;107m"
-
+green = "\033[38;5;46m"
+dim_green = "\033[38;5;22m"
 reset = "\033[0m"
 
-print("\r\033[K" + bar_color + left + reset + label_color + mid + reset + bar_color + right + reset)
-print("\r\033[K" + status[:width].center(width))
+bar = green + ("█" * fill) + dim_green + ("░" * (width - fill)) + reset
+status_line = f"{percent:3d}% {status}"
+status_line = status_line[:width].center(width)
+
+print("\r\033[K" + bar)
+print("\r\033[K" + status_line)
 PYLOAD
   else
     printf '\r\033[K'
@@ -220,7 +207,7 @@ PYLOAD
       fi
       i=$((i + 1))
     done
-    printf '\n\r\033[K%s\n' "$status"
+    printf '\n\r\033[K%3s%% %s\n' "$percent" "$status"
   fi
 
   coded_ui_loader_started=1
@@ -252,18 +239,15 @@ coded_ui_loader() {
   fi
 
   while [ "$cur" -lt "$target" ]; do
-    cur=$((cur + 2))
+    cur=$((cur + 1))
     if [ "$cur" -gt "$target" ]; then
       cur="$target"
     fi
     coded_ui_loader_render "$cur" "$status"
-    sleep 0.025
+    sleep 0.012
   done
 
-  if [ "$target" = "$cur" ]; then
-    coded_ui_loader_render "$target" "$status"
-  fi
-
+  coded_ui_loader_render "$target" "$status"
   coded_ui_loader_percent="$target"
 }
 
@@ -357,7 +341,6 @@ mkdir -p "$TMP_DIR"
 
 DOWNLOAD_OK=0
 for u in ${ASSET_URLS:-$ASSET_URL}; do
-  echo "Trying asset: $u"
   if curl -fsSL --retry 3 "$u" -o "$TAR_FILE"; then
     DOWNLOAD_OK=1
     ASSET_URL="$u"
