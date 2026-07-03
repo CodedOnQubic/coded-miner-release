@@ -1,6 +1,7 @@
 # M1091V34A_WINDOWS_PUBLIC_RUNNER
 # M1091V34B_WINDOWS_ASCII_SAFE
 # M1091V34C_WINDOWS_NO_TAR_FALLBACK
+# M1091V34D_WINDOWS_START_COMPAT
 # CODED public Windows runner: public console + silent raw logs + 60s release autoupdate.
 # Supports official one-liners:
 #   & r.ps1 -Wallet YOUR_WALLET -Worker YOUR_WORKER
@@ -378,14 +379,35 @@ function Quote-PS($Value) {
 }
 
 function Start-CodedMinerProcess($StartScript) {
+  # M1091V34D_WINDOWS_START_COMPAT
+  # Keep the old public Windows flow compatible:
+  # start.ps1 gets only documented public args: -Wallet, -Worker, optional -avx2/-avx512/-scalar, optional -N threads.
+  # Do not pass named -Threads or -Backend because older release start.ps1 versions may reject them and exit immediately.
+
   $qStart = Quote-PS $StartScript
-  $qWallet = Quote-PS $Wallet
-  $qWorker = Quote-PS $WorkerSafe
-  $qPool = Quote-PS $Pool
   $qRunLog = Quote-PS $RunLog
   $qErrLog = Quote-PS $ErrLog
   $qPlatform = Quote-PS "windows-amd64"
   $qRunId = Quote-PS $RunId
+  $qWallet = Quote-PS $Wallet
+  $qWorker = Quote-PS $WorkerSafe
+  $qPool = Quote-PS $Pool
+
+  $publicArgs = @("-Wallet", $Wallet, "-Worker", $WorkerSafe)
+
+  if ($Backend -eq "avx512") {
+    $publicArgs += "-avx512"
+  } elseif ($Backend -eq "avx2") {
+    $publicArgs += "-avx2"
+  } elseif ($Backend -eq "scalar") {
+    $publicArgs += "-scalar"
+  }
+
+  if ($Threads -gt 0) {
+    $publicArgs += ("-" + [string]$Threads)
+  }
+
+  $argLiteral = "@(" + (($publicArgs | ForEach-Object { Quote-PS $_ }) -join ",") + ")"
 
   $cmd = @"
 `$ErrorActionPreference = 'Continue'
@@ -399,16 +421,23 @@ function Start-CodedMinerProcess($StartScript) {
 `$env:CODED_RUN_ID = $qRunId
 `$env:RUN_ID = $qRunId
 `$env:CODED_WALLET = $qWallet
+`$env:WALLET = $qWallet
+`$env:QUBIC_WALLET = $qWallet
 `$env:CODED_THREADS = '$Threads'
 `$env:THREADS = '$Threads'
+`$env:CODED_POOL = $qPool
+`$env:POOL = $qPool
 `$env:CODED_ANALYTICS = 'YES'
 `$env:CODED_ANALYTICS_ENABLED = '1'
 try {
-  & $qStart -Wallet $qWallet -Worker $qWorker -Threads $Threads -Backend '$Backend' -Pool $qPool *>&1 | ForEach-Object {
+  `$codedArgs = $argLiteral
+  ('[WINDOWS_PUBLIC_START_COMPAT] start.ps1 args=' + (`$codedArgs -join ' ')) | Out-File -FilePath $qRunLog -Append -Encoding utf8
+  & $qStart @codedArgs *>&1 | ForEach-Object {
     [string]`$_ | Out-File -FilePath $qRunLog -Append -Encoding utf8
   }
 } catch {
   ('ERROR ' + [string]`$_) | Out-File -FilePath $qErrLog -Append -Encoding utf8
+  ('ERROR ' + [string]`$_) | Out-File -FilePath $qRunLog -Append -Encoding utf8
 }
 "@
 
