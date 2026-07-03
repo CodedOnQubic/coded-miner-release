@@ -219,6 +219,33 @@ mkdir -p "$INSTALL_DIR"
 cp -R "$ROOT"/. "$INSTALL_DIR"/
 chmod +x "$INSTALL_DIR"/* 2>/dev/null || true
 
+# M1091V32H_FORCE_PUBLIC_CONSOLE_NO_RAW_FALLBACK
+# A bad/rebuilt asset must never expose raw dev analytics in the public terminal.
+# If the package misses coded-public-console.py, fetch it directly from coded-miner.
+coded_ensure_public_console() {
+  if [ -f "$INSTALL_DIR/coded-public-console.py" ]; then
+    chmod +x "$INSTALL_DIR/coded-public-console.py" 2>/dev/null || true
+    return 0
+  fi
+
+  local console_url="${CODED_PUBLIC_CONSOLE_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner/m1091v6-clean-hive-autostart/release/hiveos/coded-miner/coded-public-console.py}"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL --retry 3 "$console_url" -o "$INSTALL_DIR/coded-public-console.py" 2>/dev/null || true
+  fi
+
+  if [ -f "$INSTALL_DIR/coded-public-console.py" ]; then
+    chmod +x "$INSTALL_DIR/coded-public-console.py" 2>/dev/null || true
+    return 0
+  fi
+
+  echo "ERROR: coded-public-console.py unavailable. Refusing to show raw dev analytics."
+  echo "Fix release asset or CODED_PUBLIC_CONSOLE_URL."
+  exit 88
+}
+
+coded_ensure_public_console
+
 pick_exe() {
   case "$BACKEND" in
     avx512)
@@ -371,6 +398,7 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$INSTALL_DIR/coded-public-console
   CODED_PUBLIC_BRAND_EVERY="${CODED_PUBLIC_BRAND_EVERY:-9}" \
   python3 "$INSTALL_DIR/coded-public-console.py" "$RUN_LOG" "$MINER_PID"
 else
-  echo "WARN: coded-public-console.py unavailable, falling back to raw log tail"
-  tail -n 40 -f "$RUN_LOG"
+  echo "ERROR: coded-public-console.py unavailable. Raw dev analytics will not be shown."
+  echo "RUN_LOG is still available internally at: $RUN_LOG"
+  exit 88
 fi
