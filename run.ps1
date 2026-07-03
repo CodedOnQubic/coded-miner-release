@@ -17,6 +17,7 @@ param(
 # M1091V34G_WINDOWS_PUBLIC_LOG_SAFE_FRAMES
 # M1091V34H_WINDOWS_QUIET_START_TEE_SAFE
 # M1091V34I_WINDOWS_QUIET_AND_AUTOUPDATE_60S
+# M1091V34J_REMOVE_WINDOWS_DEV_LINES_HARD
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -639,7 +640,6 @@ $script:CODED_PUBLIC_RESTART_REQUESTED = $false
 $script:CODED_PUBLIC_UPDATE_SEC = 60
 $script:CODED_PUBLIC_CURRENT_COMMIT = ""
 $script:CODED_PUBLIC_NEXT_COMMIT = ""
-
 
 
 function Get-CodedPublicManifestCommit([string]$Dir) {
