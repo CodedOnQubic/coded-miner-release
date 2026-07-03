@@ -1,5 +1,6 @@
 # M1091V34A_WINDOWS_PUBLIC_RUNNER
 # M1091V34B_WINDOWS_ASCII_SAFE
+# M1091V34C_WINDOWS_NO_TAR_FALLBACK
 # CODED public Windows runner: public console + silent raw logs + 60s release autoupdate.
 # Supports official one-liners:
 #   & r.ps1 -Wallet YOUR_WALLET -Worker YOUR_WORKER
@@ -221,19 +222,145 @@ function Stop-OldPublicProcesses {
   Start-Sleep -Seconds 1
 }
 
+function Convert-OctalSize($Bytes, $Offset, $Count) {
+  $txt = ""
+  for ($i = 0; $i -lt $Count; $i++) {
+    $b = $Bytes[$Offset + $i]
+    if ($b -eq 0 -or $b -eq 32) { continue }
+    $txt += [char]$b
+  }
+
+  if (-not $txt) { return 0 }
+
+  $total = [Int64]0
+  foreach ($ch in $txt.ToCharArray()) {
+    if ($ch -ge '0' -and $ch -le '7') {
+      $total = ($total * 8) + ([int][string]$ch)
+    }
+  }
+
+  return $total
+}
+
+function Read-TarString($Bytes, $Offset, $Count) {
+  $chars = New-Object System.Collections.Generic.List[char]
+  for ($i = 0; $i -lt $Count; $i++) {
+    $b = $Bytes[$Offset + $i]
+    if ($b -eq 0) { break }
+    [void]$chars.Add([char]$b)
+  }
+  return -join $chars
+}
+
+function Expand-TarGzDotNet($Archive, $Dest) {
+  $tmpTar = Join-Path ([IO.Path]::GetTempPath()) ("coded-" + [Guid]::NewGuid().ToString("N") + ".tar")
+
+  try {
+    $inFile = [IO.File]::OpenRead($Archive)
+    try {
+      $gzip = New-Object IO.Compression.GzipStream($inFile, [IO.Compression.CompressionMode]::Decompress)
+      try {
+        $outFile = [IO.File]::Create($tmpTar)
+        try {
+          $buffer = New-Object byte[] 1048576
+          while (($read = $gzip.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $outFile.Write($buffer, 0, $read)
+          }
+        } finally {
+          $outFile.Close()
+        }
+      } finally {
+        $gzip.Close()
+      }
+    } finally {
+      $inFile.Close()
+    }
+
+    $fs = [IO.File]::OpenRead($tmpTar)
+    try {
+      $header = New-Object byte[] 512
+
+      while ($true) {
+        $got = $fs.Read($header, 0, 512)
+        if ($got -lt 512) { break }
+
+        $allZero = $true
+        for ($i = 0; $i -lt 512; $i++) {
+          if ($header[$i] -ne 0) {
+            $allZero = $false
+            break
+          }
+        }
+        if ($allZero) { break }
+
+        $name = Read-TarString $header 0 100
+        $prefix = Read-TarString $header 345 155
+        if ($prefix) { $name = "$prefix/$name" }
+
+        $name = $name -replace '\\', '/'
+        $name = $name.TrimStart('/')
+
+        if (-not $name -or $name.Contains("..")) {
+          $size = Convert-OctalSize $header 124 12
+          $skip = [Int64]([Math]::Ceiling($size / 512.0) * 512)
+          if ($skip -gt 0) { [void]$fs.Seek($skip, [IO.SeekOrigin]::Current) }
+          continue
+        }
+
+        $size = Convert-OctalSize $header 124 12
+        $type = [char]$header[156]
+        $outPath = Join-Path $Dest ($name -replace '/', [IO.Path]::DirectorySeparatorChar)
+
+        if ($type -eq '5' -or $name.EndsWith('/')) {
+          New-Item -ItemType Directory -Force -Path $outPath | Out-Null
+        } else {
+          $parent = Split-Path -Parent $outPath
+          if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
+
+          $of = [IO.File]::Create($outPath)
+          try {
+            $remaining = [Int64]$size
+            $buf = New-Object byte[] 1048576
+            while ($remaining -gt 0) {
+              $toRead = [int][Math]::Min($buf.Length, $remaining)
+              $read = $fs.Read($buf, 0, $toRead)
+              if ($read -le 0) { break }
+              $of.Write($buf, 0, $read)
+              $remaining -= $read
+            }
+          } finally {
+            $of.Close()
+          }
+
+          $padding = (512 - ($size % 512)) % 512
+          if ($padding -gt 0) { [void]$fs.Seek($padding, [IO.SeekOrigin]::Current) }
+          continue
+        }
+
+        $skipSize = [Int64]([Math]::Ceiling($size / 512.0) * 512)
+        if ($skipSize -gt 0) { [void]$fs.Seek($skipSize, [IO.SeekOrigin]::Current) }
+      }
+    } finally {
+      $fs.Close()
+    }
+  } finally {
+    Remove-Item -Force -ErrorAction SilentlyContinue $tmpTar
+  }
+}
+
 function Extract-Asset($Archive, $Dest) {
   Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $Dest
   New-Item -ItemType Directory -Force -Path $Dest | Out-Null
 
   $tar = Get-Command tar -ErrorAction SilentlyContinue
-  if (-not $tar) {
-    throw "tar.exe not found. Windows needs tar.exe to extract the CODED release asset."
+  if ($tar) {
+    & tar -xzf $Archive -C $Dest
+    if ($LASTEXITCODE -eq 0) {
+      return
+    }
   }
 
-  & tar -xzf $Archive -C $Dest
-  if ($LASTEXITCODE -ne 0) {
-    throw "Failed to extract $Archive"
-  }
+  Expand-TarGzDotNet $Archive $Dest
 }
 
 function Find-StartScript($Dir) {
