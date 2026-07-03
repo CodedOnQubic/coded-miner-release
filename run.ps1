@@ -1,672 +1,583 @@
-# M1091V34A_WINDOWS_PUBLIC_RUNNER
-# M1091V34B_WINDOWS_ASCII_SAFE
-# M1091V34C_WINDOWS_NO_TAR_FALLBACK
-# M1091V34D_WINDOWS_START_COMPAT
-# CODED public Windows runner: public console + silent raw logs + 60s release autoupdate.
-# Supports official one-liners:
-#   & r.ps1 -Wallet YOUR_WALLET -Worker YOUR_WORKER
-#   & r.ps1 -Wallet YOUR_WALLET -Worker YOUR_WORKER -avx2 -10
+param(
+  [string]$Wallet = $env:CODED_WALLET,
+  [string]$Worker = $env:CODED_WORKER,
+  [int]$Threads = 0,
+  [ValidateSet("auto","scalar","avx2","avx512")]
+  [string]$Backend = "auto",
+  [string]$Pool = $env:CODED_POOL,
+  [Parameter(ValueFromRemainingArguments=$true)]
+  [string[]]$ExtraArgs
+)
+
+# M1091V27_WINDOWS_PUBLIC_RUN_HIVE_ANALYTICS
+# M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
+# M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
+# M1091V27I_WINDOWS_SHORT_ARGS
+# Windows public runner:
+# - Windows 8 compatible TLS bootstrap
+# - tar.exe-free .tar.gz extraction fallback
+# - starts miner like Hive default analytics: log frames + analytics uploader
+# - source metric: CODED_ANALYTICS_FRAME avg_hash_it_s_30s/hash_it_s/pipeline/qatum
 
 $ErrorActionPreference = "Stop"
 
-try {
-  [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-  [Net.ServicePointManager]::SecurityProtocol = 3072
-} catch {}
+function Enable-CodedTls {
+  try { [Net.ServicePointManager]::SecurityProtocol = 3072 } catch {}
+  try {
+    New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319' -Name 'SchUseStrongCrypto' -Value 1 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NETFramework\v4.0.30319' -Name 'SchUseStrongCrypto' -Value 1 -PropertyType DWord -Force | Out-Null
+  } catch {}
+}
 
-$Wallet = $env:WALLET
-if (-not $Wallet) { $Wallet = $env:QUBIC_WALLET }
-if (-not $Wallet) { $Wallet = $env:CODED_WALLET }
+function Download-File([string]$Url, [string]$Out) {
+  Enable-CodedTls
+  $wc = New-Object Net.WebClient
+  $wc.Headers.Add("User-Agent", "CODED-Windows-Runner")
+  $wc.DownloadFile($Url, $Out)
+}
 
-$Worker = $env:WORKER
-if (-not $Worker) { $Worker = $env:QUBIC_WORKER }
-if (-not $Worker) { $Worker = $env:CODED_WORKER }
+function Expand-TarGz([string]$Tgz, [string]$Dest) {
+  New-Item -ItemType Directory -Force $Dest | Out-Null
 
-$Threads = 0
-if ($env:THREADS) { try { $Threads = [int]$env:THREADS } catch {} }
-if ($Threads -le 0 -and $env:QUBIC_THREADS) { try { $Threads = [int]$env:QUBIC_THREADS } catch {} }
-if ($Threads -le 0 -and $env:CODED_THREADS) { try { $Threads = [int]$env:CODED_THREADS } catch {} }
+  $tarCmd = Get-Command tar.exe -ErrorAction SilentlyContinue
+  if ($tarCmd) {
+    & $tarCmd.Source -xzf $Tgz -C $Dest
+    return
+  }
 
-$Backend = "auto"
-if ($env:BACKEND) { $Backend = $env:BACKEND.ToLowerInvariant() }
-if ($env:CODED_BACKEND) { $Backend = $env:CODED_BACKEND.ToLowerInvariant() }
+  $tar = Join-Path ([IO.Path]::GetDirectoryName($Tgz)) "coded.tar"
+  $i = [IO.File]::OpenRead($Tgz)
+  $g = New-Object IO.Compression.GzipStream($i, [IO.Compression.CompressionMode]::Decompress)
+  $o = [IO.File]::Create($tar)
+  $buf = New-Object byte[] 65536
+  while (($r = $g.Read($buf,0,$buf.Length)) -gt 0) { $o.Write($buf,0,$r) }
+  $o.Close(); $g.Close(); $i.Close()
 
-$Pool = "pool.codedonqubic.com:7777"
-if ($env:POOL) { $Pool = $env:POOL }
-if ($env:CODED_POOL) { $Pool = $env:CODED_POOL }
-
-for ($i = 0; $i -lt $args.Count; $i++) {
-  $a = [string]$args[$i]
-  switch -Regex ($a) {
-    '^-Wallet$' {
-      if ($i + 1 -lt $args.Count) { $i++; $Wallet = [string]$args[$i] }
-      continue
+  $fs = [IO.File]::OpenRead($tar)
+  $h = New-Object byte[] 512
+  while (($rr = $fs.Read($h,0,512)) -eq 512) {
+    $name = ([Text.Encoding]::ASCII.GetString($h,0,100)).Trim([char]0)
+    if (!$name) { break }
+    $so = ([Text.Encoding]::ASCII.GetString($h,124,12)).Trim([char]0,' ')
+    $sz = 0
+    if ($so) { $sz = [Convert]::ToInt64($so,8) }
+    $type = [char]$h[156]
+    $path = Join-Path $Dest (($name -replace '^\./','') -replace '/','\')
+    if ($type -eq '5') {
+      New-Item -ItemType Directory -Force $path | Out-Null
+    } else {
+      New-Item -ItemType Directory -Force (Split-Path $path) -ErrorAction SilentlyContinue | Out-Null
+      $of = [IO.File]::Create($path)
+      $left = $sz
+      $c = New-Object byte[] 65536
+      while ($left -gt 0) {
+        $n = $fs.Read($c,0,[Math]::Min($c.Length,$left))
+        if ($n -le 0) { break }
+        $of.Write($c,0,$n)
+        $left -= $n
+      }
+      $of.Close()
+      $skip = (512 - ($sz % 512)) % 512
+      if ($skip) { $fs.Seek($skip,[IO.SeekOrigin]::Current) | Out-Null }
     }
-    '^-Worker$' {
-      if ($i + 1 -lt $args.Count) { $i++; $Worker = [string]$args[$i] }
-      continue
+  }
+  $fs.Close()
+}
+
+function Write-CodedWindowsAnalytics([string]$Path) {
+  $script = @'
+param(
+  [string]$LogFile,
+  [string]$Api,
+  [string]$Token,
+  [string]$Worker,
+  [string]$RigId,
+  [string]$Backend,
+  [int]$Threads,
+  [string]$RunId
+)
+
+# M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
+# Canonical Windows uploader compatible with Hive sidecar payloads.
+
+$ErrorActionPreference = "SilentlyContinue"
+[Net.ServicePointManager]::SecurityProtocol = 3072
+
+function Parse-Frame($line) {
+  $m = @{}
+  foreach ($match in [regex]::Matches($line, '([A-Za-z0-9_]+)=("[^"]*"|[^ ]+)')) {
+    $k = $match.Groups[1].Value
+    $v = $match.Groups[2].Value.Trim('"')
+    $m[$k] = $v
+  }
+  return $m
+}
+
+function S($m,$k,$fallback) {
+  if ($m.ContainsKey($k) -and $m[$k] -and $m[$k] -ne "unknown" -and $m[$k] -ne "unset") { return [string]$m[$k] }
+  return $fallback
+}
+
+function F($m,$k,$fallback=0.0) {
+  if ($m.ContainsKey($k)) {
+    $x = 0.0
+    if ([double]::TryParse(($m[$k] -replace ',','.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$x)) { return $x }
+  }
+  return $fallback
+}
+
+function I($m,$k,$fallback=0) {
+  if ($m.ContainsKey($k)) {
+    $x = 0
+    if ([int]::TryParse(([string]$m[$k]), [ref]$x)) { return $x }
+    $d = 0.0
+    if ([double]::TryParse(([string]$m[$k] -replace ',','.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$d)) { return [int]$d }
+  }
+  return $fallback
+}
+
+function Frame-Object($m) {
+  $o = @{}
+  foreach ($k in $m.Keys) {
+    $raw = [string]$m[$k]
+    $iv = 0
+    $dv = 0.0
+    if ([int]::TryParse($raw, [ref]$iv)) {
+      $o[$k] = $iv
+    } elseif ([double]::TryParse(($raw -replace ',','.'), [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$dv)) {
+      $o[$k] = $dv
+    } else {
+      $o[$k] = $raw
     }
-    '^-Pool$' {
-      if ($i + 1 -lt $args.Count) { $i++; $Pool = [string]$args[$i] }
-      continue
+  }
+  return $o
+}
+
+function Api-Url($api, $path) {
+  if (-not $api) { $api = "https://api.codedonqubic.com" }
+  $base = $api.TrimEnd("/")
+  if ($base.ToLower().EndsWith("/analytics") -and $path.ToLower().StartsWith("/analytics/")) {
+    $base = $base.Substring(0, $base.Length - 10)
+  }
+  return $base + $path
+}
+
+function Post-Json($path, $payload) {
+  try {
+    $json = $payload | ConvertTo-Json -Depth 16 -Compress
+    $wc = New-Object Net.WebClient
+    $wc.Headers["Content-Type"] = "application/json"
+    if ($Token) { $wc.Headers["Authorization"] = "Bearer $Token" }
+    $url = Api-Url $Api $path
+    $resp = $wc.UploadString($url, "POST", $json)
+    Write-Host "[M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS] $path ok resp=$($resp.Substring(0,[Math]::Min(160,$resp.Length)))"
+  } catch {
+    Write-Host "[M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS] $path fail $($_.Exception.Message)"
+  }
+}
+
+$last = ""
+while ($true) {
+  try {
+    if (Test-Path $LogFile) {
+      $frame = Get-Content $LogFile -ErrorAction SilentlyContinue |
+        Where-Object { $_ -like '*[CODED_ANALYTICS_FRAME]*' } |
+        Select-Object -Last 1
+
+      if ($frame -and $frame -ne $last) {
+        $last = $frame
+        $m = Parse-Frame $frame
+        $now = (Get-Date).ToUniversalTime().ToString("o")
+
+        $workerName = S $m "worker" $Worker
+        if (-not $workerName) { $workerName = "windows-public" }
+
+        $rig = S $m "rig_id" $RigId
+        if (-not $rig -or $rig -eq "unknown") { $rig = $workerName }
+
+        $backendName = S $m "backend" $Backend
+        if (-not $backendName) { $backendName = "unknown" }
+
+        $runtimeBackend = S $m "runtime_backend" $backendName
+        $run = S $m "run_id" $RunId
+        if (-not $run) { $run = "WIN_" + $workerName }
+
+        $thr = I $m "threads" $Threads
+        $threshold = I $m "threshold" 509
+
+        $avgHash = F $m "avg_hash_it_s_30s" 0
+        $hashIts = F $m "hash_it_s" 0
+        $backendHot = F $m "backend_hotloop_it_s" 0
+        $pipeIts = F $m "pipeline_it_s" 0
+        $routerIts = F $m "router_scoring_it_s" 0
+        $qatumIts = F $m "qatum_fullscore_it_s" 0
+
+        $avgIts = $avgHash
+        if ($avgIts -le 0) { $avgIts = $hashIts }
+        if ($avgIts -le 0) { $avgIts = $backendHot }
+
+        $lastIts = $hashIts
+        if ($lastIts -le 0) { $lastIts = $avgIts }
+
+        $totalSeen = I $m "total_seen" 0
+        $totalPass = I $m "total_pass" 0
+        $totalAudited = I $m "total_audited" 0
+        $fullscoreIterations = I $m "fullscore_total_iterations" 0
+        if ($fullscoreIterations -gt $totalAudited) { $totalAudited = $fullscoreIterations }
+
+        $falseNegative = I $m "false_negative" 0
+
+        $real321 = I $m "real321" 0
+        $real310 = I $m "real310" 0
+        $real300 = I $m "real300" 0
+
+        $b300 = I $m "score_300_309" 0
+        $b310 = I $m "score_310_320" 0
+        $b321 = I $m "score_321_plus" 0
+
+        if ($b300 -le 0) { $b300 = I $m "qatum_all_score_300_309_count" 0 }
+        if ($b310 -le 0) { $b310 = I $m "qatum_all_score_310_320_count" 0 }
+        if ($b321 -le 0) { $b321 = I $m "qatum_all_score_321_plus_count" 0 }
+
+        if (($b300 + $b310 + $b321) -le 0 -and $real300 -gt 0) {
+          $b321 = $real321
+          $b310 = [Math]::Max(0, $real310 - $real321)
+          $b300 = [Math]::Max(0, $real300 - $real310)
+        }
+
+        $real300 = [Math]::Max($real300, $b300 + $b310 + $b321)
+        $real310 = [Math]::Max($real310, $b310 + $b321)
+        $real321 = [Math]::Max($real321, $b321)
+
+        if ($real300 -gt $totalAudited) { $totalAudited = $real300 }
+
+        $maxScore = I $m "max_real_score_seen" 0
+        $maxPassed = I $m "max_real_score_passed" 0
+        $maxSkip = I $m "max_real_score_audited_skip" 0
+        if ($maxPassed -le 0) { $maxPassed = $maxScore }
+        if ($maxSkip -le 0) { $maxSkip = $maxScore }
+
+        $passRate = 0
+        if ($totalSeen -gt 0) { $passRate = $totalPass / $totalSeen }
+
+        $frameObj = Frame-Object $m
+        $raw = @{
+          source = "M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS"
+          posted_at = $now
+          log = $LogFile
+          analytics_frame = $frameObj
+          windows_public_runner = $true
+          runtime_backend = $runtimeBackend
+          avg_hash_it_s_30s = $avgHash
+          hash_it_s = $hashIts
+          pipeline_it_s = $pipeIts
+          router_scoring_it_s = $routerIts
+          qatum_fullscore_it_s = $qatumIts
+          v11_max_real_score_seen = $maxScore
+          v11_score_mode = S $m "score_mode" ""
+          real_score_available = S $m "real_score_available" ""
+        }
+
+        $heartbeat = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          status = "running"
+          live_status = "running"
+          threshold = $threshold
+          threads = $thr
+          backend = $backendName
+          active_backend = $backendName
+          avg_its = $avgIts
+          last_its = $lastIts
+          avg_hash_it_s_30s = $avgHash
+          hash_it_s = $hashIts
+          total_seen = $totalSeen
+          total_pass = $totalPass
+          total_skip = 0
+          total_audited = $totalAudited
+          false_negative = $falseNegative
+          max_real_score_seen = $maxScore
+          max_real_score_passed = $maxPassed
+          max_real_score_audited_skip = $maxSkip
+          pass_rate = $passRate
+          meta = $raw
+          raw = $raw
+        }
+
+        $perf = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          threshold = $threshold
+          backend = $backendName
+          active_backend = $backendName
+          threads = $thr
+          avg_its = $avgIts
+          last_its = $lastIts
+          avg_hash_it_s_30s = $avgHash
+          hash_it_s = $hashIts
+          backend_hotloop_it_s = $backendHot
+          pipeline_it_s = $pipeIts
+          router_scoring_it_s = $routerIts
+          qatum_fullscore_it_s = $qatumIts
+          raw_it_s = $avgHash
+          total_it_s = $avgHash
+          scoring_it_s = $routerIts
+          fullscore_it_s = $qatumIts
+          total_seen = $totalSeen
+          total_pass = $totalPass
+          total_audited = $totalAudited
+          fullscore_count = $totalAudited
+          false_negative = $falseNegative
+          real300 = $real300
+          real310 = $real310
+          real321 = $real321
+          max_real_score_seen = $maxScore
+          max_real_score_passed = $maxPassed
+          max_real_score_audited_skip = $maxSkip
+          router_name = "M1091D_T509_DISCOVERY"
+          priority_budget_matrix = "windows-public"
+          raw = $raw
+        }
+
+        $score = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          epoch = I $m "epoch" 0
+          backend = $backendName
+          cpu_model = "windows-public"
+          threshold = $threshold
+          threads = $thr
+          batch_size = I $m "batch_size" 0
+          audit_rate = 500
+          total_seen = $totalSeen
+          total_pass = $totalPass
+          total_skip = 0
+          total_audited = $totalAudited
+          false_negative = $falseNegative
+          max_score = $maxScore
+          max_pass_score = $maxPassed
+          max_audited_skip_score = $maxSkip
+          score_260_269 = 0
+          score_270_279 = 0
+          score_280_289 = 0
+          score_290_299 = 0
+          score_300_309 = $b300
+          score_310_320 = $b310
+          score_321_plus = $b321
+          real300 = $real300
+          real310 = $real310
+          real321 = $real321
+          raw = $raw
+        }
+
+        $priority = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          threshold = $threshold
+          priority_matrix = "windows-public"
+          priority_version = "M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS"
+          p0_seen = $totalSeen
+          p0_scored = $totalAudited
+          p0_skipped = 0
+          p0_score_rate = $(if ($totalSeen -gt 0) { $totalAudited / $totalSeen } else { 0 })
+          p0_real280 = 0
+          p0_real290 = 0
+          p0_real300 = $real300
+          p0_real310 = $real310
+          p0_real321 = $real321
+          p0_d300 = $real300
+          p0_d321 = $real321
+          p1_seen = 0; p1_scored = 0; p1_skipped = 0; p1_score_rate = 0; p1_real280 = 0; p1_real290 = 0; p1_real300 = 0; p1_real310 = 0; p1_real321 = 0; p1_d300 = 0; p1_d321 = 0
+          p2_seen = 0; p2_scored = 0; p2_skipped = 0; p2_score_rate = 0; p2_real280 = 0; p2_real290 = 0; p2_real300 = 0; p2_real310 = 0; p2_real321 = 0; p2_d300 = 0; p2_d321 = 0
+          p3_seen = 0; p3_scored = 0; p3_skipped = 0; p3_score_rate = 0; p3_real280 = 0; p3_real290 = 0; p3_real300 = 0; p3_real310 = 0; p3_real321 = 0; p3_d300 = 0; p3_d321 = 0
+          raw = $raw
+        }
+
+        $policy = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          threshold = $threshold
+          policy_name = "windows-public"
+          router_name = "windows-public"
+          pass = $totalPass
+          real280 = 0
+          real290 = 0
+          real300 = $real300
+          real310 = $real310
+          real321 = $real321
+          pass_per_seen = $(if ($totalSeen -gt 0) { $totalPass / $totalSeen } else { 0 })
+          real300_per_pass = $(if ($totalPass -gt 0) { $real300 / $totalPass } else { 0 })
+          real310_per_pass = $(if ($totalPass -gt 0) { $real310 / $totalPass } else { 0 })
+          raw = $raw
+        }
+
+        $histogram = @{
+          run_id = $run
+          rig_id = $rig
+          worker_name = $workerName
+          threshold = $threshold
+          router_name = "windows-public"
+          priority_budget_matrix = "windows-public"
+          rows = @(
+            @{shadow_score=270; total=0; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=280; total=0; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=290; total=0; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=300; total=$b300; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=310; total=$b310; real300=$real300; real310=$real310; real321=$real321},
+            @{shadow_score=321; total=$b321; real300=$real300; real310=$real310; real321=$real321}
+          )
+          raw = $raw
+        }
+
+        Post-Json "/analytics/runs/heartbeat" $heartbeat
+        Post-Json "/analytics/performance-snapshot" $perf
+        Post-Json "/analytics/score-distribution-snapshot" $score
+        Post-Json "/analytics/priority-budget-snapshot" $priority
+        Post-Json "/analytics/shadow-policy-snapshot" $policy
+        Post-Json "/analytics/shadow-histogram-snapshot" $histogram
+      }
     }
-    '^-Threads$' {
-      if ($i + 1 -lt $args.Count) { $i++; try { $Threads = [int]$args[$i] } catch {} }
-      continue
-    }
-    '^-Backend$' {
-      if ($i + 1 -lt $args.Count) { $i++; $Backend = ([string]$args[$i]).ToLowerInvariant() }
-      continue
-    }
-    '^-avx512$' { $Backend = "avx512"; continue }
-    '^-avx2$' { $Backend = "avx2"; continue }
-    '^-scalar$' { $Backend = "scalar"; continue }
-    '^-\d+$' {
-      try { $Threads = [int]($a.TrimStart("-")) } catch {}
-      continue
+  } catch {
+    Write-Host "[M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS] loop error $($_.Exception.Message)"
+  }
+  Start-Sleep -Seconds 5
+}
+'@
+  Set-Content -Path $Path -Value $script -Encoding ASCII
+}
+
+Enable-CodedTls
+
+# M1091V27I_WINDOWS_SHORT_ARGS
+# Support public README shorthand:
+#   -avx2 -2
+#   -avx512 -31
+#   -scalar -1
+# Canonical long form still works:
+#   -Backend avx2 -Threads 2
+if ($ExtraArgs) {
+  foreach ($arg in $ExtraArgs) {
+    $a = ([string]$arg).Trim()
+    if (!$a) { continue }
+
+    switch -Regex ($a.ToLowerInvariant()) {
+      '^-avx2$'   { $Backend = "avx2"; continue }
+      '^-avx512$' { $Backend = "avx512"; continue }
+      '^-scalar$' { $Backend = "scalar"; continue }
+      '^-auto$'   { $Backend = "auto"; continue }
+      '^-threads=(\d+)$' { $Threads = [int]$Matches[1]; continue }
+      '^-t=(\d+)$'       { $Threads = [int]$Matches[1]; continue }
+      '^-(\d+)$'         { $Threads = [int]$Matches[1]; continue }
+      '^(\d+)$'          { $Threads = [int]$Matches[1]; continue }
     }
   }
 }
 
+if (-not $Pool) { $Pool = "pool.codedonqubic.com:7777" }
 if (-not $Wallet) { $Wallet = Read-Host "Qubic wallet address" }
 if (-not $Worker) { $Worker = Read-Host "Worker name" }
+if ($Threads -le 0) { $Threads = [Math]::Max(1, [Environment]::ProcessorCount - 1) }
 
-if ($Threads -le 0) {
-  $Threads = [Math]::Max(1, [Environment]::ProcessorCount - 1)
-}
+$base = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "CODED" } else { Join-Path $env:TEMP "CODED" }
+$root = Join-Path $base "miner"
+$dir = Join-Path $root "latest"
+$tgz = Join-Path $root "coded-miner-windows-amd64-latest.tar.gz"
+$log = Join-Path $root "coded-miner.log"
+$analytics = Join-Path $root "coded-windows-analytics.ps1"
 
-if (@("auto","scalar","avx2","avx512") -notcontains $Backend) {
-  $Backend = "auto"
-}
+Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force $dir | Out-Null
+New-Item -ItemType Directory -Force $root | Out-Null
 
-$WorkerSafe = ($Worker -replace '[^A-Za-z0-9_.-]', '_')
-$Base = Join-Path $env:TEMP "coded-miner\public\$WorkerSafe"
-$LogDir = Join-Path $Base "logs"
-$PidDir = Join-Path $Base "pids"
-$StateDir = Join-Path $Base "state"
-$DownloadDir = Join-Path $StateDir "download"
-$ExtractDir = Join-Path $StateDir "latest"
-$TarPath = Join-Path $StateDir "coded-miner-windows-amd64-latest.tar.gz"
-$RunId = "PUBLIC_${WorkerSafe}_windows-amd64_$((Get-Date).ToUniversalTime().ToString('yyyyMMdd_HHmmss'))"
-$RunLog = Join-Path $LogDir "$RunId.log"
-$ErrLog = Join-Path $LogDir "ERR_$RunId.log"
-$UpdateLog = Join-Path $LogDir "public-autoupdate.log"
+$url = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
 
-$AssetUrl = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
-$RunPs1Url = "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1"
-$UpdateSec = 60
-if ($env:CODED_PUBLIC_UPDATE_SEC) { try { $UpdateSec = [int]$env:CODED_PUBLIC_UPDATE_SEC } catch {} }
-if ($UpdateSec -lt 30) { $UpdateSec = 30 }
+Write-Host "CODED Windows public runner"
+Write-Host "Downloading latest Windows universal miner..."
+Download-File $url $tgz
 
-$BootSec = 10
-if ($env:CODED_PUBLIC_BOOT_SEC) { try { $BootSec = [int]$env:CODED_PUBLIC_BOOT_SEC } catch {} }
-if ($BootSec -lt 0) { $BootSec = 0 }
+Write-Host "Extracting..."
+Expand-TarGz $tgz $dir
 
-New-Item -ItemType Directory -Force -Path $LogDir, $PidDir, $StateDir | Out-Null
-
-function Add-UpdateLog($Message) {
-  $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-  "[$ts] $Message" | Out-File -FilePath $UpdateLog -Append -Encoding utf8
-}
-
-function Write-Brand {
-  $title = '$0.01  IS  CODED'
-  $width = 78
-  $line = "=" * $width
-  $pad = [Math]::Max(0, $width - $title.Length)
-  $left = [Math]::Floor($pad / 2)
-  $right = $pad - $left
-
-  Write-Host ""
-  Write-Host ("+" + $line + "+")
-  Write-Host ("|" + (" " * $left) + $title + (" " * $right) + "|")
-  Write-Host ("+" + $line + "+")
-  Write-Host ""
-}
-
-$script:LoaderStarted = $false
-$script:LoaderPercent = 0
-$script:LoaderTop = 0
-
-function Show-Loader($Target, $Status) {
-  $width = 78
-  if ($Target -lt 0) { $Target = 0 }
-  if ($Target -gt 100) { $Target = 100 }
-  if ($Target -lt $script:LoaderPercent) { $script:LoaderPercent = 0 }
-
-  while ($script:LoaderPercent -lt $Target) {
-    $script:LoaderPercent++
-    Render-Loader $script:LoaderPercent $Status $width
-    Start-Sleep -Milliseconds 12
-  }
-
-  Render-Loader $Target $Status $width
-  $script:LoaderPercent = $Target
-}
-
-function Render-Loader($Percent, $Status, $Width) {
-  if (-not $script:LoaderStarted) {
-    $script:LoaderTop = [Console]::CursorTop
-    $script:LoaderStarted = $true
+$selected = $Backend.ToLowerInvariant()
+if ($selected -eq "auto") {
+  $detector = Join-Path $dir "coded-detect-backend.exe"
+  if (Test-Path $detector) {
+    $selected = (& $detector).Trim().ToLowerInvariant()
   } else {
-    try { [Console]::SetCursorPosition(0, $script:LoaderTop) } catch {}
-  }
-
-  $fill = [int][Math]::Floor($Width * $Percent / 100)
-  $bar = ("#" * $fill) + ("." * ($Width - $fill))
-  $statusLine = ("{0,3}% {1}" -f $Percent, $Status)
-  if ($statusLine.Length -gt $Width) { $statusLine = $statusLine.Substring(0, $Width) }
-  $left = [Math]::Floor(($Width - $statusLine.Length) / 2)
-  $statusLine = (" " * $left) + $statusLine
-  if ($statusLine.Length -lt $Width) { $statusLine = $statusLine + (" " * ($Width - $statusLine.Length)) }
-
-  Write-Host ("`r" + (" " * 120) + "`r") -NoNewline
-  Write-Host $bar -ForegroundColor Green
-  Write-Host ("`r" + (" " * 120) + "`r") -NoNewline
-  Write-Host $statusLine
-}
-
-function Finish-Loader {
-  if ($script:LoaderStarted) { Write-Host "" }
-  $script:LoaderStarted = $false
-}
-
-function Download-File($Url, $OutFile) {
-  try {
-    Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $OutFile
-  } catch {
-    $wc = New-Object Net.WebClient
-    $wc.DownloadFile($Url, $OutFile)
+    $selected = "scalar"
   }
 }
+if ($selected -notin @("scalar","avx2","avx512")) { $selected = "scalar" }
 
-function Read-ManifestCommit($Dir) {
-  $mfs = Get-ChildItem -Path $Dir -Recurse -File -Include manifest.json,release_manifest.json -ErrorAction SilentlyContinue | Select-Object -First 6
-  foreach ($mf in $mfs) {
-    try {
-      $raw = Get-Content -Raw -Path $mf.FullName
-      $json = $raw | ConvertFrom-Json
-      if ($json.commit) { return [string]$json.commit }
-    } catch {
-      $line = Select-String -Path $mf.FullName -Pattern '"commit"\s*:\s*"([^"]+)"' -ErrorAction SilentlyContinue | Select-Object -First 1
-      if ($line -and $line.Matches.Count -gt 0) { return $line.Matches[0].Groups[1].Value }
-    }
-  }
-  return ""
+$exe = Join-Path $dir ("coded-miner-{0}.exe" -f $selected)
+if (!(Test-Path $exe)) {
+  $exe = Join-Path $dir "coded-miner.exe"
+}
+if (!(Test-Path $exe)) {
+  Write-Host "Extracted files:"
+  Get-ChildItem $dir -Recurse
+  throw "No CODED Windows miner executable found."
 }
 
-function Stop-OldPublicProcesses {
-  Get-ChildItem -Path $PidDir -Filter "*.pid" -ErrorAction SilentlyContinue | ForEach-Object {
-    try {
-      $pidText = (Get-Content $_.FullName -ErrorAction SilentlyContinue | Select-Object -First 1)
-      if ($pidText) {
-        $pidValue = [int]$pidText
-        Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
-      }
-    } catch {}
-  }
+$runId = ("WIN_{0}_{1}_{2}" -f $Worker,$selected,(Get-Date).ToUniversalTime().ToString("yyyyMMdd_HHmmss"))
 
-  try {
-    Get-WmiObject Win32_Process -ErrorAction SilentlyContinue |
-      Where-Object {
-        $_.CommandLine -and (
-          $_.CommandLine -like "*$Base*" -or
-          $_.CommandLine -like "*PUBLIC_${WorkerSafe}_*" -or
-          $_.CommandLine -like "*CODED_WORKER=$WorkerSafe*"
-        )
-      } |
-      ForEach-Object {
-        try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
-      }
-  } catch {}
+$env:CODED_PLATFORM = "windows-amd64"
+$env:CODED_KERNEL_BACKEND = $selected
+$env:CODED_BACKEND = $selected
+$env:CODED_POOL = $Pool
+$env:CODED_WALLET = $Wallet
+$env:CODED_WORKER = $Worker
+$env:CODED_WORKER_NAME = $Worker
+$env:CODED_RIG_ID = $Worker
+$env:CODED_RUN_ID = $runId
+$env:CODED_THREADS = "$Threads"
+$env:CODED_ANALYTICS = "YES"
+$env:CODED_ANALYTICS_ENABLED = "1"
+$env:CODED_ANALYTICS_FRAME_SEC = "5"
+$env:CODED_LOG_FILE = $log
+$env:CODED_ANALYTICS_LOG = $log
+$env:CODED_ANALYTICS_API = if ($env:CODED_ANALYTICS_API) { $env:CODED_ANALYTICS_API } else { "https://api.codedonqubic.com" }
+$env:CODED_ANALYTICS_TOKEN = if ($env:CODED_ANALYTICS_TOKEN) { $env:CODED_ANALYTICS_TOKEN } else { "coded_analytics_ingest_2026_secure_token" }
 
-  Start-Sleep -Seconds 1
-}
+Write-CodedWindowsAnalytics $analytics
 
-function Convert-OctalSize($Bytes, $Offset, $Count) {
-  $txt = ""
-  for ($i = 0; $i -lt $Count; $i++) {
-    $b = $Bytes[$Offset + $i]
-    if ($b -eq 0 -or $b -eq 32) { continue }
-    $txt += [char]$b
-  }
+Write-Host "Starting analytics uploader..."
+Start-Process powershell -WindowStyle Minimized -ArgumentList @(
+  "-NoProfile",
+  "-ExecutionPolicy","Bypass",
+  "-File",$analytics,
+  "-LogFile",$log,
+  "-Api",$env:CODED_ANALYTICS_API,
+  "-Token",$env:CODED_ANALYTICS_TOKEN,
+  "-Worker",$Worker,
+  "-RigId",$Worker,
+  "-Backend",$selected,
+  "-Threads","$Threads",
+  "-RunId",$runId
+) | Out-Null
 
-  if (-not $txt) { return 0 }
+Write-Host "Starting CODED Miner"
+Write-Host "Backend: $selected"
+Write-Host "Pool:    $Pool"
+Write-Host "Worker:  $Worker"
+Write-Host "Threads: $Threads"
+Write-Host "Run ID:  $runId"
+Write-Host "Log:     $log"
+Write-Host ""
 
-  $total = [Int64]0
-  foreach ($ch in $txt.ToCharArray()) {
-    if ($ch -ge '0' -and $ch -le '7') {
-      $total = ($total * 8) + ([int][string]$ch)
-    }
-  }
-
-  return $total
-}
-
-function Read-TarString($Bytes, $Offset, $Count) {
-  $chars = New-Object System.Collections.Generic.List[char]
-  for ($i = 0; $i -lt $Count; $i++) {
-    $b = $Bytes[$Offset + $i]
-    if ($b -eq 0) { break }
-    [void]$chars.Add([char]$b)
-  }
-  return -join $chars
-}
-
-function Expand-TarGzDotNet($Archive, $Dest) {
-  $tmpTar = Join-Path ([IO.Path]::GetTempPath()) ("coded-" + [Guid]::NewGuid().ToString("N") + ".tar")
-
-  try {
-    $inFile = [IO.File]::OpenRead($Archive)
-    try {
-      $gzip = New-Object IO.Compression.GzipStream($inFile, [IO.Compression.CompressionMode]::Decompress)
-      try {
-        $outFile = [IO.File]::Create($tmpTar)
-        try {
-          $buffer = New-Object byte[] 1048576
-          while (($read = $gzip.Read($buffer, 0, $buffer.Length)) -gt 0) {
-            $outFile.Write($buffer, 0, $read)
-          }
-        } finally {
-          $outFile.Close()
-        }
-      } finally {
-        $gzip.Close()
-      }
-    } finally {
-      $inFile.Close()
-    }
-
-    $fs = [IO.File]::OpenRead($tmpTar)
-    try {
-      $header = New-Object byte[] 512
-
-      while ($true) {
-        $got = $fs.Read($header, 0, 512)
-        if ($got -lt 512) { break }
-
-        $allZero = $true
-        for ($i = 0; $i -lt 512; $i++) {
-          if ($header[$i] -ne 0) {
-            $allZero = $false
-            break
-          }
-        }
-        if ($allZero) { break }
-
-        $name = Read-TarString $header 0 100
-        $prefix = Read-TarString $header 345 155
-        if ($prefix) { $name = "$prefix/$name" }
-
-        $name = $name -replace '\\', '/'
-        $name = $name.TrimStart('/')
-
-        if (-not $name -or $name.Contains("..")) {
-          $size = Convert-OctalSize $header 124 12
-          $skip = [Int64]([Math]::Ceiling($size / 512.0) * 512)
-          if ($skip -gt 0) { [void]$fs.Seek($skip, [IO.SeekOrigin]::Current) }
-          continue
-        }
-
-        $size = Convert-OctalSize $header 124 12
-        $type = [char]$header[156]
-        $outPath = Join-Path $Dest ($name -replace '/', [IO.Path]::DirectorySeparatorChar)
-
-        if ($type -eq '5' -or $name.EndsWith('/')) {
-          New-Item -ItemType Directory -Force -Path $outPath | Out-Null
-        } else {
-          $parent = Split-Path -Parent $outPath
-          if ($parent) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
-
-          $of = [IO.File]::Create($outPath)
-          try {
-            $remaining = [Int64]$size
-            $buf = New-Object byte[] 1048576
-            while ($remaining -gt 0) {
-              $toRead = [int][Math]::Min($buf.Length, $remaining)
-              $read = $fs.Read($buf, 0, $toRead)
-              if ($read -le 0) { break }
-              $of.Write($buf, 0, $read)
-              $remaining -= $read
-            }
-          } finally {
-            $of.Close()
-          }
-
-          $padding = (512 - ($size % 512)) % 512
-          if ($padding -gt 0) { [void]$fs.Seek($padding, [IO.SeekOrigin]::Current) }
-          continue
-        }
-
-        $skipSize = [Int64]([Math]::Ceiling($size / 512.0) * 512)
-        if ($skipSize -gt 0) { [void]$fs.Seek($skipSize, [IO.SeekOrigin]::Current) }
-      }
-    } finally {
-      $fs.Close()
-    }
-  } finally {
-    Remove-Item -Force -ErrorAction SilentlyContinue $tmpTar
-  }
-}
-
-function Extract-Asset($Archive, $Dest) {
-  Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $Dest
-  New-Item -ItemType Directory -Force -Path $Dest | Out-Null
-
-  $tar = Get-Command tar -ErrorAction SilentlyContinue
-  if ($tar) {
-    & tar -xzf $Archive -C $Dest
-    if ($LASTEXITCODE -eq 0) {
-      return
-    }
-  }
-
-  Expand-TarGzDotNet $Archive $Dest
-}
-
-function Find-StartScript($Dir) {
-  $direct = Join-Path $Dir "start.ps1"
-  if (Test-Path $direct) { return $direct }
-
-  $found = Get-ChildItem -Path $Dir -Recurse -Filter "start.ps1" -File -ErrorAction SilentlyContinue | Select-Object -First 1
-  if ($found) { return $found.FullName }
-
-  return ""
-}
-
-function Quote-PS($Value) {
-  return "'" + ([string]$Value).Replace("'", "''") + "'"
-}
-
-function Start-CodedMinerProcess($StartScript) {
-  # M1091V34D_WINDOWS_START_COMPAT
-  # Keep the old public Windows flow compatible:
-  # start.ps1 gets only documented public args: -Wallet, -Worker, optional -avx2/-avx512/-scalar, optional -N threads.
-  # Do not pass named -Threads or -Backend because older release start.ps1 versions may reject them and exit immediately.
-
-  $qStart = Quote-PS $StartScript
-  $qRunLog = Quote-PS $RunLog
-  $qErrLog = Quote-PS $ErrLog
-  $qPlatform = Quote-PS "windows-amd64"
-  $qRunId = Quote-PS $RunId
-  $qWallet = Quote-PS $Wallet
-  $qWorker = Quote-PS $WorkerSafe
-  $qPool = Quote-PS $Pool
-
-  $publicArgs = @("-Wallet", $Wallet, "-Worker", $WorkerSafe)
-
-  if ($Backend -eq "avx512") {
-    $publicArgs += "-avx512"
-  } elseif ($Backend -eq "avx2") {
-    $publicArgs += "-avx2"
-  } elseif ($Backend -eq "scalar") {
-    $publicArgs += "-scalar"
-  }
-
-  if ($Threads -gt 0) {
-    $publicArgs += ("-" + [string]$Threads)
-  }
-
-  $argLiteral = "@(" + (($publicArgs | ForEach-Object { Quote-PS $_ }) -join ",") + ")"
-
-  $cmd = @"
-`$ErrorActionPreference = 'Continue'
-`$env:CODED_PLATFORM = $qPlatform
-`$env:CODED_BACKEND_PLATFORM = $qPlatform
-`$env:CODED_WORKER = $qWorker
-`$env:CODED_WORKER_NAME = $qWorker
-`$env:CODED_RIG_ID = $qWorker
-`$env:WORKER = $qWorker
-`$env:WORKER_NAME = $qWorker
-`$env:CODED_RUN_ID = $qRunId
-`$env:RUN_ID = $qRunId
-`$env:CODED_WALLET = $qWallet
-`$env:WALLET = $qWallet
-`$env:QUBIC_WALLET = $qWallet
-`$env:CODED_THREADS = '$Threads'
-`$env:THREADS = '$Threads'
-`$env:CODED_POOL = $qPool
-`$env:POOL = $qPool
-`$env:CODED_ANALYTICS = 'YES'
-`$env:CODED_ANALYTICS_ENABLED = '1'
+# M1091V27B_WINDOWS_NATIVE_STDERR_SAFE
+# Windows PowerShell can convert native stderr output into NativeCommandError when
+# $ErrorActionPreference="Stop". The miner prints normal runtime/status lines on
+# stderr on some Windows builds, so do not let stderr stop the public runner.
+$ErrorActionPreference = "Continue"
 try {
-  `$codedArgs = $argLiteral
-  ('[WINDOWS_PUBLIC_START_COMPAT] start.ps1 args=' + (`$codedArgs -join ' ')) | Out-File -FilePath $qRunLog -Append -Encoding utf8
-  & $qStart @codedArgs *>&1 | ForEach-Object {
-    [string]`$_ | Out-File -FilePath $qRunLog -Append -Encoding utf8
-  }
-} catch {
-  ('ERROR ' + [string]`$_) | Out-File -FilePath $qErrLog -Append -Encoding utf8
-  ('ERROR ' + [string]`$_) | Out-File -FilePath $qRunLog -Append -Encoding utf8
-}
-"@
-
-  $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
-  $ps = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-  $proc = Start-Process -FilePath $ps -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-EncodedCommand",$encoded) -PassThru
-  $proc.Id | Out-File -FilePath (Join-Path $PidDir "runner.pid") -Encoding ascii
-  return $proc
-}
-
-function Current-QubicEpoch {
-  try {
-    $ref = [DateTime]::Parse("2026-07-01T12:00:00Z").ToUniversalTime()
-    $now = [DateTime]::UtcNow
-    $weeks = [Math]::Floor(($now - $ref).TotalDays / 7)
-    return [string](220 + $weeks)
-  } catch {
-    return "?"
-  }
-}
-
-function Format-Rate($Value) {
-  try { $v = [double]$Value } catch { return "0" }
-  if ($v -ge 1000000000) { return ("{0:N2}B" -f ($v / 1000000000)).Replace(".", ",") }
-  if ($v -ge 1000000) { return ("{0:N2}M" -f ($v / 1000000)).Replace(".", ",") }
-  if ($v -ge 1000) { return ("{0:N1}K" -f ($v / 1000)).Replace(".", ",") }
-  return ("{0:N0}" -f $v)
-}
-
-function Backend-Label($Value) {
-  $b = ([string]$Value).ToLowerInvariant()
-  if ($b -match "avx512") { return "AVX512" }
-  if ($b -match "avx2") { return "AVX2" }
-  if ($b -match "arm|neon") { return "ARM" }
-  if ($b -match "cuda") { return "CUDA" }
-  return "SCALAR"
-}
-
-function Parse-Frame($Line) {
-  if ($Line -notmatch "CODED_ANALYTICS_FRAME") { return $null }
-
-  $h = @{}
-  foreach ($m in [regex]::Matches($Line, '([A-Za-z0-9_]+)=("[^"]*"|\S+)')) {
-    $k = $m.Groups[1].Value
-    $v = $m.Groups[2].Value.Trim('"')
-    $h[$k] = $v
-  }
-  return $h
-}
-
-function Print-PublicHeader($State) {
-  Write-Brand
-  Write-Host "CODED PUBLIC MINER"
-  Write-Host ("wallet  : " + $Wallet)
-  Write-Host ("worker  : " + $WorkerSafe)
-  Write-Host ("threads : " + $Threads)
-  Write-Host ("backend : " + (Backend-Label $State.backend))
-  Write-Host ("epoch   : " + $State.epoch)
+  & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | Tee-Object -FilePath $log -Append
+} finally {
   Write-Host ""
+  Write-Host "CODED Miner process ended."
 }
-
-function Print-PublicLine($State) {
-  $clock = (Get-Date).ToString("HH:mm:ss")
-  $epoch = $State.epoch
-  if (-not $epoch -or $epoch -eq "?") { $epoch = Current-QubicEpoch }
-
-  $backend = Backend-Label $State.backend
-  $total = Format-Rate $State.total
-  $avg = Format-Rate $State.avg
-
-  $body = "$clock E:$epoch | SOLS $($State.sols)/$($State.accepted) R:$($State.rejected) | $backend | $total it/s | AVG $avg it/s"
-  $logo = '[$0.01]'
-  $width = 78
-  $gap = $width - $logo.Length - $body.Length
-  if ($gap -lt 1) { $gap = 1 }
-  $line = $logo + (" " * $gap) + $body
-  if ($line.Length -gt $width) { $line = $line.Substring(0, $width) }
-  Write-Host $line
-}
-
-function Test-UpdateAvailable($CurrentCommit) {
-  $checkDir = Join-Path $StateDir ("update-check-" + [Guid]::NewGuid().ToString("N"))
-  $checkTar = Join-Path $checkDir "latest.tar.gz"
-
-  try {
-    New-Item -ItemType Directory -Force -Path $checkDir | Out-Null
-    Download-File ($AssetUrl + "?cb=" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) $checkTar
-    Extract-Asset $checkTar $checkDir
-    $newCommit = Read-ManifestCommit $checkDir
-
-    if (-not $newCommit) {
-      Add-UpdateLog "new_commit_missing keep_current cur=$CurrentCommit"
-      return $false
-    }
-
-    if ($newCommit -eq $CurrentCommit) {
-      Add-UpdateLog "already_latest commit=$newCommit"
-      return $false
-    }
-
-    Add-UpdateLog "update_available old=$CurrentCommit new=$newCommit restarting"
-    return $true
-  } catch {
-    Add-UpdateLog ("update_check_failed keep_current error=" + [string]$_)
-    return $false
-  } finally {
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $checkDir
-  }
-}
-
-function Public-ConsoleLoop($Proc, $CurrentCommit) {
-  $state = [ordered]@{
-    backend = $Backend
-    epoch = Current-QubicEpoch
-    total = 0
-    avg = 0
-    sols = 0
-    accepted = 0
-    rejected = 0
-  }
-
-  $printed = $false
-  $statusCount = 0
-  $seenLines = 0
-  $lastUpdateCheck = Get-Date
-
-  while ($true) {
-    if ((Get-Date) -gt $lastUpdateCheck.AddSeconds($UpdateSec)) {
-      $lastUpdateCheck = Get-Date
-      if (Test-UpdateAvailable $CurrentCommit) {
-        Write-Brand
-        Show-Loader 15 "Updating CODED MINER"
-        Show-Loader 45 "Downloading latest CODED MINER"
-        Show-Loader 75 "Preparing restart"
-        Show-Loader 100 "Restarting neural network training"
-        Finish-Loader
-
-        Stop-Process -Id $Proc.Id -Force -ErrorAction SilentlyContinue
-        Stop-OldPublicProcesses
-
-        $next = Join-Path $env:TEMP "coded-run-latest.ps1"
-        Download-File ($RunPs1Url + "?cb=" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) $next
-
-        $argList = @("-NoProfile","-ExecutionPolicy","Bypass","-File",$next,"-Wallet",$Wallet,"-Worker",$WorkerSafe,"-Threads",$Threads,"-Backend",$Backend)
-        & powershell.exe @argList
-        exit $LASTEXITCODE
-      }
-    }
-
-    if (Test-Path $RunLog) {
-      $lines = Get-Content -Path $RunLog -Tail 80 -ErrorAction SilentlyContinue
-      foreach ($line in $lines) {
-        $frame = Parse-Frame $line
-        if (-not $frame) { continue }
-
-        $sig = $line.GetHashCode()
-        if ($sig -eq $script:LastFrameSig) { continue }
-        $script:LastFrameSig = $sig
-
-        if ($frame.backend) { $state.backend = $frame.backend }
-        if ($frame.runtime_backend) { $state.backend = $frame.runtime_backend }
-        if ($frame.epoch) { $state.epoch = $frame.epoch }
-        if ($frame.hash_it_s) { $state.total = $frame.hash_it_s }
-        elseif ($frame.total_it_s) { $state.total = $frame.total_it_s }
-        if ($frame.avg_hash_it_s_30s) { $state.avg = $frame.avg_hash_it_s_30s }
-        elseif ($frame.avg_it_s) { $state.avg = $frame.avg_it_s }
-        if ($frame.total_pass) { $state.sols = $frame.total_pass }
-        if ($frame.accepted) { $state.accepted = $frame.accepted }
-        if ($frame.rejected) { $state.rejected = $frame.rejected }
-
-        if (-not $printed) {
-          Print-PublicHeader $state
-          $printed = $true
-        }
-
-        if (($statusCount -gt 0) -and (($statusCount % 9) -eq 0)) {
-          Write-Host ""
-          Write-Brand
-        }
-
-        Print-PublicLine $state
-        $statusCount++
-      }
-    }
-
-    if ($Proc.HasExited) {
-      break
-    }
-
-    Start-Sleep -Seconds 1
-  }
-}
-
-Write-Brand
-Show-Loader 8 "Initializing latest CODED MINER"
-
-Stop-OldPublicProcesses
-
-Show-Loader 32 "Downloading latest CODED MINER"
-Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $DownloadDir
-New-Item -ItemType Directory -Force -Path $DownloadDir | Out-Null
-Download-File ($AssetUrl + "?cb=" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) $TarPath
-
-Show-Loader 55 "Setting up environment"
-Extract-Asset $TarPath $ExtractDir
-
-$CurrentCommit = Read-ManifestCommit $ExtractDir
-if (-not $CurrentCommit) { $CurrentCommit = "unknown" }
-
-$Start = Find-StartScript $ExtractDir
-if (-not $Start) {
-  throw "start.ps1 not found in Windows release package."
-}
-
-Show-Loader 72 "Starting neural network training"
-$Proc = Start-CodedMinerProcess $Start
-
-Show-Loader 82 "Starting analytics heartbeat"
-
-for ($i = 1; $i -le $BootSec; $i++) {
-  $pct = 82 + [int]($i * 17 / [Math]::Max(1, $BootSec))
-  if ($pct -gt 99) { $pct = 99 }
-  Show-Loader $pct "Stabilizing neural network training"
-  Start-Sleep -Seconds 1
-}
-
-Show-Loader 100 "Neural network training online"
-Finish-Loader
-
-Add-UpdateLog "autoupdate_started commit=$CurrentCommit interval=${UpdateSec}s worker=$WorkerSafe backend=$Backend threads=$Threads"
-
-Public-ConsoleLoop $Proc $CurrentCommit
