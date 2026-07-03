@@ -19,6 +19,7 @@ param(
 # M1091V34I_WINDOWS_QUIET_AND_AUTOUPDATE_60S
 # M1091V34J_REMOVE_WINDOWS_DEV_LINES_HARD
 # M1091V34K_WINDOWS_FIRST_OUTPUT_BRANDING
+# M1091V34M_WINDOWS_NO_REGISTRY_TLS_SPAM
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -28,11 +29,10 @@ param(
 $ErrorActionPreference = "Stop"
 
 function Enable-CodedTls {
+  # M1091V34M_WINDOWS_NO_REGISTRY_TLS_SPAM
+  # Session-local TLS 1.2 only. Do not write HKLM registry keys:
+  # Windows 8 / locked-down PCs can mine without admin rights and without PermissionDenied spam.
   try { [Net.ServicePointManager]::SecurityProtocol = 3072 } catch {}
-  try {
-    New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\.NETFramework\v4.0.30319' -Name 'SchUseStrongCrypto' -Value 1 -PropertyType DWord -Force | Out-Null
-    New-ItemProperty -Path 'HKLM:\SOFTWARE\Wow6432Node\Microsoft\.NETFramework\v4.0.30319' -Name 'SchUseStrongCrypto' -Value 1 -PropertyType DWord -Force | Out-Null
-  } catch {}
 }
 
 function Download-File([string]$Url, [string]$Out) {
