@@ -1,4 +1,5 @@
 # M1091V34A_WINDOWS_PUBLIC_RUNNER
+# M1091V34B_WINDOWS_ASCII_SAFE
 # CODED public Windows runner: public console + silent raw logs + 60s release autoupdate.
 # Supports official one-liners:
 #   & r.ps1 -Wallet YOUR_WALLET -Worker YOUR_WORKER
@@ -109,15 +110,15 @@ function Add-UpdateLog($Message) {
 function Write-Brand {
   $title = '$0.01  IS  CODED'
   $width = 78
-  $line = "═" * $width
+  $line = "=" * $width
   $pad = [Math]::Max(0, $width - $title.Length)
   $left = [Math]::Floor($pad / 2)
   $right = $pad - $left
 
   Write-Host ""
-  Write-Host ("╔" + $line + "╗")
-  Write-Host ("║" + (" " * $left) + $title + (" " * $right) + "║")
-  Write-Host ("╚" + $line + "╝")
+  Write-Host ("+" + $line + "+")
+  Write-Host ("|" + (" " * $left) + $title + (" " * $right) + "|")
+  Write-Host ("+" + $line + "+")
   Write-Host ""
 }
 
@@ -150,7 +151,7 @@ function Render-Loader($Percent, $Status, $Width) {
   }
 
   $fill = [int][Math]::Floor($Width * $Percent / 100)
-  $bar = ("█" * $fill) + ("░" * ($Width - $fill))
+  $bar = ("#" * $fill) + ("." * ($Width - $fill))
   $statusLine = ("{0,3}% {1}" -f $Percent, $Status)
   if ($statusLine.Length -gt $Width) { $statusLine = $statusLine.Substring(0, $Width) }
   $left = [Math]::Floor(($Width - $statusLine.Length) / 2)
