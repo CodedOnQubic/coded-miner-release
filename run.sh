@@ -123,7 +123,7 @@ TAR_FILE="$STATE_DIR/coded-miner.tar.gz"
 
 # M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S
 # Central public auto-update interval. Override with CODED_PUBLIC_UPDATE_SEC=...
-CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-300}"
+CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
 CODED_PUBLIC_RUNSH_URL="${CODED_PUBLIC_RUNSH_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh}"
 
 mkdir -p "$LOG_DIR" "$PID_DIR" "$TMP_DIR"
@@ -136,6 +136,7 @@ ANALYTICS_LOG="$LOG_DIR/ANALYTICS_${RUN_ID}.log"
 # M1091V33C_SMOOTH_FULL_WIDTH_LOADER
 # M1091V33D_GREEN_LOADER_STATUS_LINE
 # M1091V33F_PUBLIC_CONSOLE_FROM_RELEASE_REPO
+# M1091V33G_PUBLIC_UPDATE_60S
 # M1091V33E_SHORTER_LOADER_SEQUENCE
 CODED_PUBLIC_BOOT_SEC="${CODED_PUBLIC_BOOT_SEC:-10}"
 CODED_PUBLIC_BOOT_STATUS="${CODED_PUBLIC_BOOT_STATUS:-Initializing latest CODED MINER}"
@@ -372,7 +373,7 @@ coded_ui_loader 55 "Setting up environment"
 
 # M1091V32H_FORCE_PUBLIC_CONSOLE_NO_RAW_FALLBACK
 # A bad/rebuilt asset must never expose raw dev analytics in the public terminal.
-# If the package misses coded-public-console.py, fetch it directly from coded-miner.
+# If the package misses coded-public-console.py, fetch it directly from coded-miner-release.
 coded_ensure_public_console() {
   if [ -f "$INSTALL_DIR/coded-public-console.py" ]; then
     chmod +x "$INSTALL_DIR/coded-public-console.py" 2>/dev/null || true
@@ -659,7 +660,7 @@ if [ -s "$PID_DIR/update.request" ]; then
   export THREADS="$THREADS"
   export POOL="$POOL"
   export API_ROOT="$API_ROOT"
-  export CODED_PUBLIC_UPDATE_SEC="$CODED_PUBLIC_UPDATE_SEC"
+  export CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
   export CODED_PUBLIC_BRAND_EVERY="${CODED_PUBLIC_BRAND_EVERY:-9}"
   export CODED_PUBLIC_LINE_SEC="${CODED_PUBLIC_LINE_SEC:-1}"
   export CODED_PUBLIC_BOOT_STATUS="Updating CODED MINER"
@@ -675,7 +676,7 @@ if [ -s "$PID_DIR/update.request" ]; then
   coded_ui_loader 100 "Restarting neural network training"
   coded_ui_loader_finish
 
-  exec bash -c "$(curl -fsSL "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")"
+  exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")"
 fi
 
 exit "$CONSOLE_RC"
