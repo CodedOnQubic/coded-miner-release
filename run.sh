@@ -96,8 +96,9 @@ ASSET_URL="${CODED_LINUX_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner
 case "$OS/$ARCH" in
   darwin/arm64|darwin/aarch64)
     PLATFORM="macos-arm64"
-    ASSET_URL="${CODED_MAC_ARM_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz}"
-    ASSET_URLS="${CODED_MAC_ARM_LATEST_URLS:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest-macos-arm64.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64-latest.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64.tar.gz}"
+    # M1091V29C4_PUBLIC_MAC_ARM_RAW_LATEST_FIRST
+    ASSET_URL="${CODED_MAC_ARM_LATEST_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64-latest.tar.gz}"
+    ASSET_URLS="${CODED_MAC_ARM_LATEST_URLS:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64-latest.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest-macos-arm64.tar.gz}"
     ;;
   linux/x86_64|linux/amd64)
     PLATFORM="linux-amd64"
@@ -223,7 +224,7 @@ case "$(basename "$MINER_EXE")" in
   *avx512*) SELECTED_BACKEND="avx512" ;;
   *avx2*) SELECTED_BACKEND="avx2" ;;
   *scalar*) SELECTED_BACKEND="scalar" ;;
-  coded-miner) [ "$PLATFORM" = "macos-arm64" ] && SELECTED_BACKEND="arm-portable-real" ;;
+  coded-miner) [ "$PLATFORM" = "macos-arm64" ] && SELECTED_BACKEND="${CODED_BACKEND:-arm-neon}" ;;
 esac
 
 if [ ! -f "$INSTALL_DIR/coded-runtime-sidecar.py" ]; then
