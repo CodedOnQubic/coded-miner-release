@@ -18,6 +18,7 @@ param(
 # M1091V34H_WINDOWS_QUIET_START_TEE_SAFE
 # M1091V34I_WINDOWS_QUIET_AND_AUTOUPDATE_60S
 # M1091V34J_REMOVE_WINDOWS_DEV_LINES_HARD
+# M1091V34K_WINDOWS_FIRST_OUTPUT_BRANDING
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -500,8 +501,6 @@ New-Item -ItemType Directory -Force $dir | Out-Null
 New-Item -ItemType Directory -Force $root | Out-Null
 
 $url = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
-
-Write-Host "CODED Windows public runner"
 Write-Host "Downloading latest Windows universal miner..."
 Download-File $url $tgz
 
