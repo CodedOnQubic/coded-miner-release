@@ -15,6 +15,7 @@ param(
 # M1091V27I_WINDOWS_SHORT_ARGS
 # M1091V34F_WINDOWS_PUBLIC_LOG_ONLY
 # M1091V34G_WINDOWS_PUBLIC_LOG_SAFE_FRAMES
+# M1091V34H_WINDOWS_QUIET_START_TEE_SAFE
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -689,7 +690,6 @@ function Write-CodedPublicFrame([string]$Line) {
 
 Write-CodedPublicBrand
 Show-CodedPublicBootLoader "Neural network training online"
-Write-Host "Starting analytics uploader..."
 Start-Process powershell -WindowStyle Minimized -ArgumentList @(
   "-NoProfile",
   "-ExecutionPolicy","Bypass",
@@ -704,7 +704,6 @@ Start-Process powershell -WindowStyle Minimized -ArgumentList @(
   "-RunId",$runId
 ) | Out-Null
 
-Write-Host "Starting CODED Miner"
 Write-Host "Backend: $selected"
 Write-Host "Pool:    $Pool"
 Write-Host "Worker:  $Worker"
@@ -719,9 +718,8 @@ Write-Host ""
 # stderr on some Windows builds, so do not let stderr stop the public runner.
 $ErrorActionPreference = "Continue"
 try {
-  & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | ForEach-Object {
+  & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | Tee-Object -FilePath $log -Append | ForEach-Object {
     $line = [string]$_
-    [System.IO.File]::AppendAllText($log, $line + [Environment]::NewLine, [System.Text.Encoding]::UTF8)
     Write-CodedPublicFrame $line
   }
 } finally {
