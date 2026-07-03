@@ -1,4 +1,40 @@
 #!/usr/bin/env bash
+
+# M1091V29C3_PUBLIC_MAC_ARM_AUTO_NEON_DEFAULTS
+# Public one-liner contract:
+#   WALLET=... WORKER=... bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
+# On Apple Silicon, all backend/fullscore/analytics defaults are selected automatically.
+CODED_UNAME_S="$(uname -s 2>/dev/null || true)"
+CODED_UNAME_M="$(uname -m 2>/dev/null || true)"
+if [ "$CODED_UNAME_S" = "Darwin" ] && { [ "$CODED_UNAME_M" = "arm64" ] || [ "$CODED_UNAME_M" = "aarch64" ]; }; then
+  export CODED_PLATFORM="${CODED_PLATFORM:-macos-arm64}"
+  export CODED_BACKEND="${CODED_BACKEND:-arm-neon}"
+  export CODED_KERNEL_BACKEND="${CODED_KERNEL_BACKEND:-arm-neon}"
+  export CODED_ARM_NEON_KERNEL="${CODED_ARM_NEON_KERNEL:-compat32}"
+
+  # Universal Analytics must behave like Linux/Windows public backends.
+  export CODED_ANALYTICS="${CODED_ANALYTICS:-YES}"
+  export CODED_ANALYTICS_ENABLED="${CODED_ANALYTICS_ENABLED:-1}"
+
+  # Mac ARM NEON path is golden-gated real score now.
+  export CODED_FORCE_FULLSCORE="${CODED_FORCE_FULLSCORE:-1}"
+  export CODED_FULLSCORE_ALL_BACKENDS="${CODED_FULLSCORE_ALL_BACKENDS:-1}"
+  export CODED_PREFILTER_DIFFICULTY="${CODED_PREFILTER_DIFFICULTY:-0}"
+
+  # Prefer performance cores if macOS exposes them; otherwise use all logical CPUs.
+  if [ -z "${THREADS:-}" ] && [ -z "${CODED_THREADS:-}" ]; then
+    CODED_AUTO_THREADS="$(sysctl -n hw.perflevel0.logicalcpu 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
+    export THREADS="$CODED_AUTO_THREADS"
+    export CODED_THREADS="$CODED_AUTO_THREADS"
+  else
+    export THREADS="${THREADS:-$CODED_THREADS}"
+    export CODED_THREADS="${CODED_THREADS:-$THREADS}"
+  fi
+
+  # Future policy: metal-gpu may override this only after separate golden validation.
+  export CODED_MAC_ARM_AUTO="${CODED_MAC_ARM_AUTO:-1}"
+fi
+
 set -euo pipefail
 
 # M1091V28_LINUX_MAC_PUBLIC_RUNNER_CANONICAL_ANALYTICS
@@ -61,7 +97,7 @@ case "$OS/$ARCH" in
   darwin/arm64|darwin/aarch64)
     PLATFORM="macos-arm64"
     ASSET_URL="${CODED_MAC_ARM_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz}"
-    ASSET_URLS="${CODED_MAC_ARM_LATEST_URLS:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest-macos-arm64.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64.tar.gz}"
+    ASSET_URLS="${CODED_MAC_ARM_LATEST_URLS:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest-macos-arm64.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64-latest.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64.tar.gz}"
     ;;
   linux/x86_64|linux/amd64)
     PLATFORM="linux-amd64"
