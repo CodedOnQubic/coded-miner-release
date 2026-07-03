@@ -20,6 +20,7 @@ param(
 # M1091V34J_REMOVE_WINDOWS_DEV_LINES_HARD
 # M1091V34K_WINDOWS_FIRST_OUTPUT_BRANDING
 # M1091V34M_WINDOWS_NO_REGISTRY_TLS_SPAM
+# M1091V34N_DISABLE_WINDOWS_INLINE_AUTOUPDATE
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -634,75 +635,7 @@ $script:CODED_PUBLIC_HEADER_PRINTED = $false
 $script:CODED_PUBLIC_LINE_COUNT = 0
 $script:CODED_PUBLIC_LAST_SIG = ""
 
-$script:CODED_PUBLIC_LAST_UPDATE_CHECK = Get-Date
-$script:CODED_PUBLIC_RESTART_REQUESTED = $false
-$script:CODED_PUBLIC_UPDATE_SEC = 60
-$script:CODED_PUBLIC_CURRENT_COMMIT = ""
-$script:CODED_PUBLIC_NEXT_COMMIT = ""
-
-
-function Get-CodedPublicManifestCommit([string]$Dir) {
-  try {
-    $files = Get-ChildItem -Path $Dir -Recurse -File -Include manifest.json,release_manifest.json -ErrorAction SilentlyContinue
-    foreach ($f in $files) {
-      try {
-        $raw = Get-Content -Raw -Path $f.FullName
-        $json = $raw | ConvertFrom-Json
-        if ($json.commit) { return [string]$json.commit }
-      } catch {
-        try {
-          $line = Select-String -Path $f.FullName -Pattern '"commit"\s*:\s*"([^"]+)"' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($line -and $line.Matches.Count -gt 0) { return $line.Matches[0].Groups[1].Value }
-        } catch {}
-      }
-    }
-  } catch {}
-  return ""
-}
-
-function Test-CodedPublicUpdateAvailable {
-  if ($script:CODED_PUBLIC_RESTART_REQUESTED) { return }
-
-  $now = Get-Date
-  if ($now -lt $script:CODED_PUBLIC_LAST_UPDATE_CHECK.AddSeconds($script:CODED_PUBLIC_UPDATE_SEC)) {
-    return
-  }
-
-  $script:CODED_PUBLIC_LAST_UPDATE_CHECK = $now
-
-  $checkRoot = Join-Path $root ("update-check-" + [Guid]::NewGuid().ToString("N"))
-  $checkTgz = Join-Path $checkRoot "latest.tgz"
-
-  try {
-    New-Item -ItemType Directory -Force $checkRoot | Out-Null
-    Download-File ($url + "?cb=" + [int][double]::Parse((Get-Date -UFormat %s))) $checkTgz
-    Expand-TarGz $checkTgz $checkRoot
-
-    $newCommit = Get-CodedPublicManifestCommit $checkRoot
-    if (!$newCommit) { return }
-
-    if (!$script:CODED_PUBLIC_CURRENT_COMMIT) {
-      $script:CODED_PUBLIC_CURRENT_COMMIT = Get-CodedPublicManifestCommit $dir
-    }
-
-    if ($script:CODED_PUBLIC_CURRENT_COMMIT -and $newCommit -ne $script:CODED_PUBLIC_CURRENT_COMMIT) {
-      $script:CODED_PUBLIC_NEXT_COMMIT = $newCommit
-      $script:CODED_PUBLIC_RESTART_REQUESTED = $true
-      Write-CodedPublicBrand
-      Write-Host ("CODED update available: " + $script:CODED_PUBLIC_CURRENT_COMMIT + " -> " + $newCommit)
-      Write-Host "Restarting CODED public miner..."
-      throw "CODED_PUBLIC_UPDATE_REQUESTED"
-    }
-  } catch {
-    if ([string]$_ -eq "CODED_PUBLIC_UPDATE_REQUESTED") { throw }
-  } finally {
-    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue $checkRoot
-  }
-}
-
-
 function Write-CodedPublicFrame([string]$Line) {
-  Test-CodedPublicUpdateAvailable
   if ($Line -notmatch "CODED_ANALYTICS_FRAME") { return }
 
   $sig = [string]$Line.GetHashCode()
@@ -759,7 +692,6 @@ function Write-CodedPublicFrame([string]$Line) {
 
 Write-CodedPublicBrand
 Show-CodedPublicBootLoader "Neural network training online"
-$script:CODED_PUBLIC_CURRENT_COMMIT = Get-CodedPublicManifestCommit $dir
 Start-Process powershell -WindowStyle Minimized -ArgumentList @(
   "-NoProfile",
   "-ExecutionPolicy","Bypass",
@@ -785,24 +717,6 @@ try {
     Write-CodedPublicFrame $line
   }
 } finally {
-  if ($script:CODED_PUBLIC_RESTART_REQUESTED) {
-    try {
-      $next = Join-Path $env:TEMP "coded-run-latest.ps1"
-      $runUrl = "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1?cb=" + [int][double]::Parse((Get-Date -UFormat %s))
-      Download-File $runUrl $next
-
-      $restartArgs = @("-NoProfile","-ExecutionPolicy","Bypass","-File",$next,"-Wallet",$Wallet,"-Worker",$Worker)
-      if ($Backend -and $Backend -ne "auto") { $restartArgs += ("-" + $Backend) }
-      if ($Threads -gt 0) { $restartArgs += ("-" + [string]$Threads) }
-
-      & powershell @restartArgs
-      exit $LASTEXITCODE
-    } catch {
-      Write-Host ("CODED public autoupdate restart failed: " + [string]$_)
-      exit 91
-    }
-  }
-
   Write-Host ""
   Write-Host "CODED Miner process ended."
 }
