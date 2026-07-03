@@ -277,7 +277,6 @@ nohup env \
   CODED_RUN_ID="$RUN_ID" \
   RUN_LOG="$RUN_LOG" \
   CODED_RUN_LOG="$RUN_LOG" \
-  # M1091V29C5_RUNSH_SIDECAR_BACKEND_ENV
   CODED_PLATFORM="$PLATFORM" \
   CODED_BACKEND_PLATFORM="$PLATFORM" \
   CODED_BACKEND="$SELECTED_BACKEND" \
@@ -301,7 +300,7 @@ nohup env \
   CODED_ANALYTICS=YES \
   ANALYTICS=YES \
   python3 "$INSTALL_DIR/coded-runtime-sidecar.py" \
-  >> "$ANALYTICS_LOG" 2>&1 &
+  < /dev/null >> "$ANALYTICS_LOG" 2>&1 &
 ANALYTICS_PID=$!
 echo "$ANALYTICS_PID" > "$PID_DIR/analytics.pid"
 
@@ -315,7 +314,26 @@ echo "ANALYTICS_PID $ANALYTICS_PID"
 echo "RUN_LOG $RUN_LOG"
 echo "ANALYTICS_LOG $ANALYTICS_LOG"
 echo ""
-echo "Tail log:"
-echo "  tail -f '$RUN_LOG'"
+echo "Public console:"
+echo "  internal raw log: $RUN_LOG"
 echo ""
-tail -n 40 -f "$RUN_LOG"
+
+# M1091V32A_PUBLIC_RUNSH_CONSOLE
+# Visible terminal uses coded-public-console.py.
+# Raw miner/analytics output remains in RUN_LOG for Universal Analytics.
+if command -v python3 >/dev/null 2>&1 && [ -f "$INSTALL_DIR/coded-public-console.py" ]; then
+  CODED_WORKER_NAME="$WORKER_SAFE" \
+  CODED_WORKER="$WORKER_SAFE" \
+  CODED_RIG_ID="$WORKER_SAFE" \
+  CODED_WALLET="$WALLET" \
+  CODED_THREADS="$THREADS" \
+  CODED_SELECTED_BACKEND="$SELECTED_BACKEND" \
+  CODED_KERNEL_BACKEND="$SELECTED_BACKEND" \
+  CODED_BACKEND="$SELECTED_BACKEND" \
+  CODED_PLATFORM="$PLATFORM" \
+  CODED_PUBLIC_BRAND_EVERY="${CODED_PUBLIC_BRAND_EVERY:-9}" \
+  python3 "$INSTALL_DIR/coded-public-console.py" "$RUN_LOG" "$MINER_PID"
+else
+  echo "WARN: coded-public-console.py unavailable, falling back to raw log tail"
+  tail -n 40 -f "$RUN_LOG"
+fi
