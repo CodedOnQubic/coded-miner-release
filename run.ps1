@@ -491,6 +491,78 @@ if (-not $Worker) { $Worker = Read-Host "Worker name" }
 if ($Threads -le 0) { $Threads = [Math]::Max(1, [Environment]::ProcessorCount - 1) }
 
 $base = if ($env:LOCALAPPDATA) { Join-Path $env:LOCALAPPDATA "CODED" } else { Join-Path $env:TEMP "CODED" }
+# M1091V43Y_WINDOWS_RUNPS1_RELEASE_STATUS_POST
+function Send-CodedReleaseStatusV43Y {
+  param(
+    [string]$InstallDir,
+    [string]$Worker,
+    [string]$Backend
+  )
+
+  try {
+    $ErrorActionPreference = "SilentlyContinue"
+
+    $manifestPath = $null
+    foreach ($f in @(
+      (Join-Path $InstallDir "release_manifest.json"),
+      (Join-Path $InstallDir "coded-miner\release_manifest.json"),
+      (Join-Path (Get-Location) "release_manifest.json"),
+      (Join-Path (Get-Location) "coded-miner\release_manifest.json")
+    )) {
+      if (Test-Path $f) {
+        $manifestPath = $f
+        break
+      }
+    }
+
+    if (!$manifestPath) { return }
+
+    $m = Get-Content -Raw $manifestPath | ConvertFrom-Json
+
+    $commit = [string]$m.commit
+    if ($m.source_commit) { $commit = [string]$m.source_commit }
+
+    $version = [string]$m.version
+    if ($m.asset_version) { $version = [string]$m.asset_version }
+
+    $w = $Worker
+    if (!$w) { $w = $env:CODED_WORKER }
+    if (!$w) { $w = $env:CODED_WORKER_NAME }
+    if (!$w) { $w = $env:WORKER_NAME }
+    if (!$w) { $w = $env:RIG_NAME }
+    if (!$w) { $w = $env:COMPUTERNAME }
+    if (!$w) { $w = "RigPortable_Win8" }
+
+    $b = $Backend
+    if (!$b) { $b = $env:CODED_KERNEL_BACKEND }
+    if (!$b) { $b = $env:CODED_BACKEND }
+    if (!$b) { $b = $env:BACKEND }
+    if (!$b) { $b = "windows-amd64" }
+
+    $api = $env:CODED_POOL_API_URL
+    if (!$api) { $api = $env:POOL_API_URL }
+    if (!$api) { $api = "http://178.104.150.57:4000" }
+    $api = $api.TrimEnd("/")
+
+    if ($commit -match "^[0-9a-fA-F]{7,40}$") {
+      $payload = @{
+        worker_name = $w
+        rig_id = $w
+        backend = $b
+        commit = $commit.ToLowerInvariant()
+        version = $version
+      } | ConvertTo-Json -Compress
+
+      $wc = New-Object System.Net.WebClient
+      $wc.Headers.Add("Content-Type", "application/json")
+      [void]$wc.UploadString("$api/api/miner/release-status", "POST", $payload)
+      Write-Host "[PUBLIC] M1091V43Y_WINDOWS_RUNPS1_RELEASE_STATUS_POST worker=$w commit=$($commit.ToLowerInvariant()) backend=$b"
+    }
+  } catch {
+    Write-Host "[PUBLIC] M1091V43Y_WINDOWS_RUNPS1_RELEASE_STATUS_POST_ERROR $($_.Exception.Message)"
+  }
+}
+
 $root = Join-Path $base "miner"
 $dir = Join-Path $root "latest"
 $tgz = Join-Path $root "coded-miner-windows-amd64-latest.tar.gz"
@@ -656,6 +728,8 @@ $env:CODED_POOL = $Pool
 $env:CODED_WALLET = $Wallet
 $env:CODED_WORKER = $Worker
 $env:CODED_WORKER_NAME = $Worker
+
+Send-CodedReleaseStatusV43Y -InstallDir $dir -Worker $Worker -Backend $selected
 $env:CODED_RIG_ID = $Worker
 $env:CODED_RUN_ID = $runId
 $env:CODED_THREADS = "$Threads"
