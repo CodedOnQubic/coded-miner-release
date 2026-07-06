@@ -548,11 +548,22 @@ function Start-CodedWindowsSafeAutoupdate {
 
       try {
         $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        $url = "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/release_manifest.json?cb=$cb"
-        $resp = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 20
+        # M1091V39B_WINDOWS_LATEST_RELEASE_API_COMMIT_CHECK
+        # Latest truth comes from GitHub Releases/latest tag, not raw main/release_manifest.json.
+        # Tag format: v0.9.3-m1091v16-universal-build-button-<commit>-YYYYMMDDTHHMMSSZ
+        $url = "https://api.github.com/repos/CodedOnQubic/coded-miner-release/releases/latest?cb=$cb"
+        $resp = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 20 -Headers @{ "User-Agent" = "CODED-Windows-Public-Runner" }
         $json = $resp.Content | ConvertFrom-Json
-        $latest = [string]$json.commit
-        $version = [string]$json.version
+        $version = [string]$json.tag_name
+        $latest = ""
+
+        if ($version -match "-([0-9a-fA-F]{7,40})-[0-9]{8}T[0-9]{6}Z$") {
+          $latest = $Matches[1].ToLowerInvariant()
+        }
+
+        if (-not $latest -and $json.name -match "-([0-9a-fA-F]{7,40})-[0-9]{8}T[0-9]{6}Z") {
+          $latest = $Matches[1].ToLowerInvariant()
+        }
 
         if (-not $latest) { continue }
 
