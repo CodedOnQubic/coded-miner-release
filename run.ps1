@@ -485,7 +485,7 @@ if ($ExtraArgs) {
   }
 }
 
-if (-not $Pool) { $Pool = "pool.codedonqubic.com:7777" }
+if (-not $Pool) { $Pool = "178.104.150.57:7777" }
 if (-not $Wallet) { $Wallet = Read-Host "Qubic wallet address" }
 if (-not $Worker) { $Worker = Read-Host "Worker name" }
 if ($Threads -le 0) { $Threads = [Math]::Max(1, [Environment]::ProcessorCount - 1) }
@@ -497,6 +497,110 @@ $tgz = Join-Path $root "coded-miner-windows-amd64-latest.tar.gz"
 $log = Join-Path $root "coded-miner.log"
 $analytics = Join-Path $root "coded-windows-analytics.ps1"
 
+# M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE
+function Get-CodedWindowsLocalCommit {
+  param([string]$InstallDir)
+
+  $candidates = @(
+    (Join-Path $InstallDir "release_manifest.json"),
+    (Join-Path $InstallDir "coded-miner\release_manifest.json"),
+    (Join-Path $InstallDir "manifest.json"),
+    (Join-Path $InstallDir "coded-miner\manifest.json")
+  )
+
+  foreach ($m in $candidates) {
+    if (Test-Path $m) {
+      try {
+        $j = Get-Content $m -Raw | ConvertFrom-Json
+        if ($j.commit) { return [string]$j.commit }
+      } catch {}
+    }
+  }
+
+  return ""
+}
+
+function Start-CodedWindowsSafeAutoupdate {
+  param(
+    [string]$Root,
+    [string]$CurrentCommit,
+    [string]$ExePath,
+    [string]$Worker
+  )
+
+  $sec = 60
+  if ($env:CODED_PUBLIC_UPDATE_SEC) {
+    try {
+      $parsed = [int]$env:CODED_PUBLIC_UPDATE_SEC
+      if ($parsed -ge 30) { $sec = $parsed }
+    } catch {}
+  }
+
+  $flag = Join-Path $Root "coded-windows-update-requested.flag"
+  $last = Join-Path $Root "coded-windows-last-requested.txt"
+  Remove-Item $flag -Force -ErrorAction SilentlyContinue
+
+  Start-Job -Name ("coded-win-autoupdate-" + $Worker) -ScriptBlock {
+    param($Root, $CurrentCommit, $ExePath, $Worker, $Sec, $Flag, $Last)
+
+    while ($true) {
+      Start-Sleep -Seconds $Sec
+
+      try {
+        $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $url = "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/release_manifest.json?cb=$cb"
+        $resp = Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 20
+        $json = $resp.Content | ConvertFrom-Json
+        $latest = [string]$json.commit
+        $version = [string]$json.version
+
+        if (-not $latest) { continue }
+
+        if ($latest -eq $CurrentCommit) {
+          Write-Host "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker up_to_date local=$CurrentCommit latest=$latest"
+          continue
+        }
+
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $lastCommit = ""
+        $lastTs = 0
+
+        if (Test-Path $Last) {
+          try {
+            $parts = (Get-Content $Last -Raw).Trim().Split(" ")
+            if ($parts.Length -ge 2) {
+              $lastCommit = $parts[0]
+              $lastTs = [int64]$parts[1]
+            }
+          } catch {}
+        }
+
+        $age = $now - $lastTs
+        if ($lastCommit -eq $latest -and $age -lt 900) {
+          Write-Host "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker update_already_requested local=$CurrentCommit latest=$latest age_sec=$age"
+          continue
+        }
+
+        "$latest $now" | Set-Content -Path $Last -Encoding ASCII
+        "update_needed local=$CurrentCommit latest=$latest version=$version" | Set-Content -Path $Flag -Encoding ASCII
+
+        Write-Host "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker update_needed local=$CurrentCommit latest=$latest version=$version action=stop_miner"
+
+        Get-Process -ErrorAction SilentlyContinue | Where-Object {
+          $_.Path -and ($_.Path -eq $ExePath)
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+        break
+      }
+      catch {
+        Write-Host "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE_ERROR worker=$Worker error=$($_.Exception.Message)"
+      }
+    }
+  } -ArgumentList $Root, $CurrentCommit, $ExePath, $Worker, $sec, $flag, $last | Out-Null
+}
+
+
+
 Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $dir | Out-Null
 New-Item -ItemType Directory -Force $root | Out-Null
@@ -507,6 +611,9 @@ Download-File $url $tgz
 
 Write-Host "Extracting..."
 Expand-TarGz $tgz $dir
+
+$CurrentCommit = Get-CodedWindowsLocalCommit $dir
+Write-Host ("Current release commit: " + $CurrentCommit)
 
 $selected = $Backend.ToLowerInvariant()
 if ($selected -eq "auto") {
@@ -550,6 +657,7 @@ $env:CODED_ANALYTICS_API = if ($env:CODED_ANALYTICS_API) { $env:CODED_ANALYTICS_
 $env:CODED_ANALYTICS_TOKEN = if ($env:CODED_ANALYTICS_TOKEN) { $env:CODED_ANALYTICS_TOKEN } else { "coded_analytics_ingest_2026_secure_token" }
 
 Write-CodedWindowsAnalytics $analytics
+Start-CodedWindowsSafeAutoupdate -Root $root -CurrentCommit $CurrentCommit -ExePath $exe -Worker $Worker
 
 
 function Format-CodedPublicRate($Value) {
@@ -718,5 +826,31 @@ try {
   }
 } finally {
   Write-Host ""
+
+  # M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE
+  $updateFlag = Join-Path $root "coded-windows-update-requested.flag"
+  if (Test-Path $updateFlag) {
+    Write-Host "CODED Miner update requested. Restarting public runner on latest..."
+    Remove-Item $updateFlag -Force -ErrorAction SilentlyContinue
+
+    $self = $PSCommandPath
+    if (-not $self) { $self = $MyInvocation.MyCommand.Path }
+
+    if ($self -and (Test-Path $self)) {
+      $args = @(
+        "-NoProfile",
+        "-ExecutionPolicy","Bypass",
+        "-File",$self,
+        "-Wallet",$Wallet,
+        "-Worker",$Worker,
+        "-Pool",$Pool,
+        "-Backend",$Backend,
+        "-Threads","$Threads"
+      )
+      Start-Process powershell -ArgumentList $args | Out-Null
+      exit
+    }
+  }
+
   Write-Host "CODED Miner process ended."
 }
