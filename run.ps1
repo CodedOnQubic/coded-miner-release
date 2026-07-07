@@ -688,6 +688,178 @@ Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $dir | Out-Null
 New-Item -ItemType Directory -Force $root | Out-Null
 
+# M1091V43AD_WINDOWS_MINUTELY_QUIET_AUTOUPDATE
+function Start-CodedWindowsMinutelyAutoupdateV43AD {
+  param(
+    [string]$Root,
+    [string]$InstallDir,
+    [string]$ExePath,
+    [string]$Worker
+  )
+
+  try {
+    $jobName = "coded-win-v43ad-autoupdate-" + (($Worker -replace '[^A-Za-z0-9_.-]', '_'))
+    Get-Job -Name $jobName -ErrorAction SilentlyContinue | Stop-Job -Force -ErrorAction SilentlyContinue | Out-Null
+    Get-Job -Name $jobName -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue | Out-Null
+
+    Start-Job -Name $jobName -ScriptBlock {
+      param($Root, $InstallDir, $ExePath, $Worker)
+
+      $ErrorActionPreference = "SilentlyContinue"
+
+      $state = Join-Path $Root "autoupdate-v43ad"
+      New-Item -ItemType Directory -Force -Path $state | Out-Null
+
+      $log = Join-Path $state "autoupdate.log"
+      $lastFile = Join-Path $state "last-request.txt"
+      $flag = Join-Path $Root "coded-update-request.txt"
+
+      function LogV43AD([string]$msg) {
+        $ts = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+        Add-Content -Path $log -Value "$ts M1091V43AD_WINDOWS_MINUTELY_QUIET_AUTOUPDATE $msg" -Encoding UTF8
+      }
+
+      function ReadLocalCommitV43AD([string]$dir) {
+        foreach ($f in @(
+          (Join-Path $dir "release_manifest.json"),
+          (Join-Path $dir "coded-miner\release_manifest.json")
+        )) {
+          if (Test-Path $f) {
+            try {
+              $m = Get-Content -Raw $f | ConvertFrom-Json
+              $c = [string]$m.commit
+              if ($m.source_commit) { $c = [string]$m.source_commit }
+              if ($c -match "^[0-9a-fA-F]{7,40}$") { return $c.ToLowerInvariant() }
+            } catch {}
+          }
+        }
+        return ""
+      }
+
+      function GetLatestReleaseV43AD() {
+        try {
+          [Net.ServicePointManager]::SecurityProtocol = 3072
+          $cb = [int][double]::Parse((Get-Date -UFormat %s))
+          $url = "https://api.github.com/repos/CodedOnQubic/coded-miner-release/releases/latest?cb=$cb"
+          $wc = New-Object System.Net.WebClient
+          $wc.Headers.Add("User-Agent", "coded-win-v43ad-autoupdate")
+          $raw = $wc.DownloadString($url)
+          $json = $raw | ConvertFrom-Json
+
+          $version = [string]$json.tag_name
+          if (!$version) { $version = [string]$json.name }
+
+          $latest = ""
+          if ($version -match "-([0-9a-fA-F]{7,40})-[0-9]{8}T[0-9]{6}Z") {
+            $latest = $Matches[1].ToLowerInvariant()
+          } elseif ([string]$json.name -match "-([0-9a-fA-F]{7,40})-[0-9]{8}T[0-9]{6}Z") {
+            $latest = $Matches[1].ToLowerInvariant()
+          }
+
+          return @{
+            commit = $latest
+            version = $version
+          }
+        } catch {
+          LogV43AD "latest_check_error error=$($_.Exception.Message)"
+          return @{
+            commit = ""
+            version = ""
+          }
+        }
+      }
+
+      function StopMinerV43AD([string]$exePath) {
+        $stopped = $false
+
+        try {
+          $target = ""
+          if ($exePath) { $target = [System.IO.Path]::GetFullPath($exePath).ToLowerInvariant() }
+
+          $procs = Get-Process -ErrorAction SilentlyContinue | Where-Object {
+            try {
+              $p = $_.Path
+              if (!$p) { return $false }
+              $pp = [System.IO.Path]::GetFullPath($p).ToLowerInvariant()
+              return (
+                $pp -eq $target -or
+                $pp.EndsWith("\coded-miner.exe") -or
+                $pp.EndsWith("\coded-miner-avx2.exe") -or
+                $pp.EndsWith("\coded-miner-avx512.exe") -or
+                $pp.EndsWith("\coded-miner-scalar.exe")
+              )
+            } catch {
+              return $false
+            }
+          }
+
+          foreach ($proc in $procs) {
+            try {
+              Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+              $stopped = $true
+            } catch {}
+          }
+        } catch {}
+
+        return $stopped
+      }
+
+      LogV43AD "started worker=$Worker root=$Root install=$InstallDir"
+
+      while ($true) {
+        try {
+          $local = ReadLocalCommitV43AD $InstallDir
+          $latestObj = GetLatestReleaseV43AD
+          $latest = [string]$latestObj.commit
+          $version = [string]$latestObj.version
+
+          if (!$local -or !$latest) {
+            LogV43AD "skip_missing_commit local=$local latest=$latest"
+            Start-Sleep -Seconds 60
+            continue
+          }
+
+          if ($local -eq $latest) {
+            LogV43AD "up_to_date local=$local latest=$latest"
+            Start-Sleep -Seconds 60
+            continue
+          }
+
+          $now = [int][double]::Parse((Get-Date -UFormat %s))
+          $lastCommit = ""
+          $lastTs = 0
+
+          if (Test-Path $lastFile) {
+            $parts = (Get-Content -Raw $lastFile).Trim().Split(" ")
+            if ($parts.Length -ge 2) {
+              $lastCommit = $parts[0]
+              [int]::TryParse($parts[1], [ref]$lastTs) | Out-Null
+            }
+          }
+
+          $age = $now - $lastTs
+          if ($lastCommit -eq $latest -and $age -lt 180) {
+            LogV43AD "guard_skip local=$local latest=$latest age_sec=$age"
+            Start-Sleep -Seconds 60
+            continue
+          }
+
+          "$latest $now" | Set-Content -Path $lastFile -Encoding ASCII
+          "update_needed local=$local latest=$latest version=$version" | Set-Content -Path $flag -Encoding ASCII
+
+          $stopped = StopMinerV43AD $ExePath
+          LogV43AD "update_requested local=$local latest=$latest version=$version stopped=$stopped"
+
+          Start-Sleep -Seconds 60
+        } catch {
+          LogV43AD "loop_error error=$($_.Exception.Message)"
+          Start-Sleep -Seconds 60
+        }
+      }
+    } -ArgumentList $Root, $InstallDir, $ExePath, $Worker | Out-Null
+  } catch {}
+}
+
 $url = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
 Write-Host "Downloading latest Windows universal miner..."
 Download-File $url $tgz
@@ -743,6 +915,7 @@ $env:CODED_ANALYTICS_TOKEN = if ($env:CODED_ANALYTICS_TOKEN) { $env:CODED_ANALYT
 
 Write-CodedWindowsAnalytics $analytics
 Start-CodedWindowsSafeAutoupdate -Root $root -CurrentCommit $CurrentCommit -ExePath $exe -Worker $Worker
+Start-CodedWindowsMinutelyAutoupdateV43AD -Root $root -InstallDir $dir -ExePath $exe -Worker $Worker
 
 
 function Format-CodedPublicRate($Value) {
