@@ -741,7 +741,12 @@ $env:CODED_WORKER_NAME = $Worker
 
 Send-CodedReleaseStatusV43Y -InstallDir $dir -Worker $Worker -Backend $selected
 $env:CODED_RIG_ID = $Worker
-$env:CODED_RUN_ID = $runId
+# M1091V44F_CLEAN_CANONICAL_RUN_ID
+if (-not $env:CODED_RUN_ID) {
+  $env:CODED_RUN_ID = $runId
+} else {
+  $runId = $env:CODED_RUN_ID
+}
 $env:CODED_THREADS = "$Threads"
 $env:CODED_ANALYTICS = "YES"
 $env:CODED_ANALYTICS_ENABLED = "1"
