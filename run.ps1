@@ -721,6 +721,16 @@ if (!(Test-Path $exe)) {
 
 $runId = ("WIN_{0}_{1}_{2}" -f $Worker,$selected,(Get-Date).ToUniversalTime().ToString("yyyyMMdd_HHmmss"))
 
+# M1091V44E_CANONICAL_RUN_START_ENV
+if (-not $env:CODED_RUN_STARTED_AT) {
+  $env:CODED_RUN_STARTED_AT = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+}
+if (-not $env:CODED_RUN_ID) {
+  $safeWorkerForRun = if ($Worker) { $Worker } elseif ($env:CODED_WORKER_NAME) { $env:CODED_WORKER_NAME } elseif ($env:WORKER_NAME) { $env:WORKER_NAME } else { $env:COMPUTERNAME }
+  $safeWorkerForRun = ([string]$safeWorkerForRun) -replace '[^A-Za-z0-9_.-]', ''
+  $env:CODED_RUN_ID = "RUN_${safeWorkerForRun}_$($env:CODED_RUN_STARTED_AT -replace '[-:]','' -replace '\.\d+','')"
+}
+
 $env:CODED_PLATFORM = "windows-amd64"
 $env:CODED_KERNEL_BACKEND = $selected
 $env:CODED_BACKEND = $selected

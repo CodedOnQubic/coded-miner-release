@@ -36,6 +36,16 @@ if [ "$CODED_UNAME_S" = "Darwin" ] && { [ "$CODED_UNAME_M" = "arm64" ] || [ "$CO
 fi
 
 set -euo pipefail
+# M1091V44E_CANONICAL_RUN_START_ENV
+if [ -z "${CODED_RUN_STARTED_AT:-}" ]; then
+  CODED_RUN_STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+fi
+if [ -z "${CODED_RUN_ID:-}" ]; then
+  _coded_worker_for_run="${CODED_WORKER_NAME:-${WORKER_NAME:-${CODED_WORKER:-${WORKER:-$(hostname 2>/dev/null || echo worker)}}}}"
+  _coded_worker_for_run="$(printf "%s" "$_coded_worker_for_run" | tr -cd "A-Za-z0-9_.-")"
+  CODED_RUN_ID="RUN_${_coded_worker_for_run}_$(printf "%s" "$CODED_RUN_STARTED_AT" | tr -d ":-" | sed "s/Z$/Z/")"
+fi
+export CODED_RUN_STARTED_AT CODED_RUN_ID
 
 # M1091V28_LINUX_MAC_PUBLIC_RUNNER_CANONICAL_ANALYTICS
 # M1091V28B_NO_THRESHOLD_CLI_MAC_ASSET_FALLBACKS
