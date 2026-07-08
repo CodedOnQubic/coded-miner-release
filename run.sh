@@ -1,4 +1,62 @@
 #!/usr/bin/env bash
+# M1091V50Y_MACOS_BETA_WRAPPER_WITH_TELEMETRY_ENV
+coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
+  local root pkg console bin worker wallet threads pool_url
+
+  root="/tmp/coded-m1091v50h-runsh-beta/pkg"
+
+  worker="${WORKER:-${CODED_WORKER:-coded-worker}}"
+  wallet="${WALLET:-${CODED_WALLET:-TEST_WALLET}}"
+  threads="${THREADS:-${CODED_THREADS:-}}"
+  pool_url="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
+
+  export WORKER="$worker"
+  export WALLET="$wallet"
+  export CODED_WORKER="$worker"
+  export CODED_WALLET="$wallet"
+  export CODED_POOL_API_URL="$pool_url"
+  export POOL_API_URL="$pool_url"
+
+  [ -n "$threads" ] && export THREADS="$threads" && export CODED_THREADS="$threads"
+
+  export CODED_ANALYTICS="${CODED_ANALYTICS:-yes}"
+  export CODED_FLEET_JOIN="${CODED_FLEET_JOIN:-yes}"
+  export CODED_RELEASE_CHANNEL="beta"
+  export CODED_RELEASE_COMMIT="${beta_commit:-${CODED_RELEASE_COMMIT:-}}"
+  export CODED_RELEASE_VERSION="${beta_version:-${CODED_RELEASE_VERSION:-}}"
+  export CODED_MINER_COMMIT="${beta_commit:-${CODED_MINER_COMMIT:-}}"
+  export CODED_MINER_VERSION="${beta_version:-${CODED_MINER_VERSION:-}}"
+  export GIT_COMMIT="${beta_commit:-${GIT_COMMIT:-}}"
+  export RELEASE_VERSION="${beta_version:-${RELEASE_VERSION:-}}"
+  export CODED_BUILD_TARGET="macos-arm64"
+  export CODED_PLATFORM="macos-arm64"
+
+  for pkg in \
+    "$root/coded-miner" \
+    "$root"
+  do
+    console="$pkg/coded-public-console.py"
+    if [ -f "$console" ]; then
+      echo "[M1091V50Y] starting macOS beta console wrapper=$console worker=$worker commit=${CODED_RELEASE_COMMIT:-unknown}"
+      cd "$pkg" || return 1
+      exec python3 ./coded-public-console.py
+    fi
+  done
+
+  # Last-resort fallback only. Prefer the console wrapper because it carries wallet/worker/analytics.
+  for bin in \
+    "$root/coded-miner/coded-miner" \
+    "$root/coded-miner" \
+    "$root/pkg/coded-miner/coded-miner"
+  do
+    if [ -x "$bin" ]; then
+      echo "[M1091V50Y] starting macOS beta binary fallback=$bin worker=$worker commit=${CODED_RELEASE_COMMIT:-unknown}"
+      exec "$bin"
+    fi
+  done
+
+  return 1
+}
 # M1091V50V_PLATFORM_AWARE_BETA_ASSET
 coded_m1091v50v_beta_asset_name() {
   local os arch
@@ -199,7 +257,7 @@ echo "[M1091V50V] beta asset=$beta_asset_name"
   done
 
 
-  coded_m1091v50v_exec_macos_beta_binary_if_present || true
+  coded_m1091v50y_exec_macos_beta_wrapper_if_present || coded_m1091v50v_exec_macos_beta_binary_if_present || true
   echo "[M1091V50H] no beta entrypoint found; falling back to public latest"
   return 1
 }
