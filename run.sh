@@ -1,4 +1,43 @@
 #!/usr/bin/env bash
+# M1091V50V_PLATFORM_AWARE_BETA_ASSET
+coded_m1091v50v_beta_asset_name() {
+  local os arch
+  os="$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+  arch="$(uname -m 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+
+  case "${os}:${arch}" in
+    darwin:arm64|darwin:aarch64)
+      printf '%s\n' "coded-miner-macos-arm64-beta-latest.tar.gz"
+      ;;
+    *)
+      printf '%s\n' "${beta_asset_name:-coded-miner-beta-latest.tar.gz}"
+      ;;
+  esac
+}
+
+coded_m1091v50v_exec_macos_beta_binary_if_present() {
+  local root entry
+  root="/tmp/coded-m1091v50h-runsh-beta/pkg"
+
+  for entry in \
+    "$root/coded-miner/coded-miner" \
+    "$root/coded-miner" \
+    "$root/pkg/coded-miner/coded-miner"
+  do
+    if [ -x "$entry" ]; then
+      echo "[M1091V50V] starting macOS beta binary entry=$entry"
+      exec "$entry"
+    fi
+  done
+
+  entry="$(find "$root" -maxdepth 4 -type f -name coded-miner -perm -111 2>/dev/null | head -1 || true)"
+  if [ -n "$entry" ] && [ -x "$entry" ]; then
+    echo "[M1091V50V] starting discovered macOS beta binary entry=$entry"
+    exec "$entry"
+  fi
+
+  return 1
+}
 # M1091V50H_RUN_SH_BETA_BOOTSTRAP_VERSION_TAG
 # Public run.sh beta bootstrap:
 # - default path remains unchanged
@@ -75,6 +114,9 @@ coded_m1091v50h_try_beta() {
   [ "${CODED_BETA_BOOTSTRAP_ACTIVE:-}" = "1" ] && return 1
   coded_m1091v50h_beta_requested "$@" || return 1
 
+
+beta_asset_name="$(coded_m1091v50v_beta_asset_name)"
+echo "[M1091V50V] beta asset=$beta_asset_name"
   echo "[M1091V50H] beta requested in public run.sh"
 
   pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
@@ -105,8 +147,8 @@ coded_m1091v50h_try_beta() {
     return 1
   fi
 
-  beta_url="https://github.com/CodedOnQubic/coded-miner-release/releases/download/${beta_version}/coded-miner-beta-latest.tar.gz"
-  beta_tgz="$tmp_root/coded-miner-beta-latest.tar.gz"
+  beta_url="https://github.com/CodedOnQubic/coded-miner-release/releases/download/${beta_version}/${beta_asset_name:-coded-miner-beta-latest.tar.gz}"
+  beta_tgz="$tmp_root/${beta_asset_name:-coded-miner-beta-latest.tar.gz}"
   beta_dir="$tmp_root/pkg"
 
   echo "[M1091V50H] beta version=$beta_version"
@@ -156,6 +198,8 @@ coded_m1091v50h_try_beta() {
     fi
   done
 
+
+  coded_m1091v50v_exec_macos_beta_binary_if_present || true
   echo "[M1091V50H] no beta entrypoint found; falling back to public latest"
   return 1
 }
