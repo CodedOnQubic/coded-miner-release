@@ -70,79 +70,7 @@ PYJSON
 }
 
 
-# M1091V50I2_RUN_SH_BETA_FOREGROUND_STATUS
-coded_m1091v50i2_patch_beta_payload() {
-  beta_dir="$1"
-  beta_version="$2"
-  beta_commit="$3"
-
-  export CODED_RELEASE_STATUS="beta"
-  export CODED_RELEASE_CHANNEL="beta"
-  export CODED_EXPECTED_RELEASE_VERSION="$beta_version"
-  export CODED_EXPECTED_RELEASE_COMMIT="$beta_commit"
-  export CODED_BETA_RUNTIME_ACTIVE="1"
-
-  echo "[M1091V50I2] Status: beta | release_channel=beta | commit=$beta_commit | version=$beta_version"
-  echo "[M1091V50I2] beta foreground mode: prefer start.sh over h-run.sh"
-
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "[M1091V50I2] python3 unavailable; beta payload lock skipped"
-    return 0
-  fi
-
-  python3 - "$beta_dir" "$beta_version" "$beta_commit" <<'PYLOCK'
-import sys
-from pathlib import Path
-
-root = Path(sys.argv[1])
-version = sys.argv[2]
-commit = sys.argv[3]
-
-marker = "M1091V50I2_BETA_PAYLOAD_LOCKED_BY_RUN_SH"
-
-targets = [
-    root / "start.sh",
-    root / "h-run.sh",
-    root / "coded-miner" / "start.sh",
-    root / "coded-miner" / "h-run.sh",
-]
-
-exports = (
-    f"# {marker}\n"
-    "export CODED_RELEASE_STATUS=\"beta\"\n"
-    "export CODED_RELEASE_CHANNEL=\"beta\"\n"
-    f"export CODED_EXPECTED_RELEASE_VERSION=\"{version}\"\n"
-    f"export CODED_EXPECTED_RELEASE_COMMIT=\"{commit}\"\n"
-    "export CODED_BETA_RUNTIME_ACTIVE=\"1\"\n"
-    f"echo \"Status: beta | release_channel=beta | commit={commit} | version={version}\"\n"
-)
-
-for path in targets:
-    if not path.exists():
-        continue
-
-    text = path.read_text(errors="ignore")
-
-    # Prevent inner bootstrap/update from replacing beta with public latest.
-    text = text.replace("releases/latest/download", f"releases/download/{version}")
-    text = text.replace("coded-miner-latest.tar.gz", "coded-miner-beta-latest.tar.gz")
-
-    if marker not in text:
-        lines = text.splitlines()
-        insert_at = 1 if lines and lines[0].startswith("#!") else 0
-        lines.insert(insert_at, exports.rstrip())
-        text = "\n".join(lines) + "\n"
-
-    path.write_text(text)
-    try:
-        path.chmod(path.stat().st_mode | 0o111)
-    except Exception:
-        pass
-
-    print(f"[M1091V50I2] patched beta payload file={path}")
-PYLOCK
-}
-
+# M1091V50J_RUN_SH_STATUS_ONLY_NO_PAYLOAD_PATCH
 coded_m1091v50h_try_beta() {
   [ "${CODED_BETA_BOOTSTRAP_ACTIVE:-}" = "1" ] && return 1
   coded_m1091v50h_beta_requested "$@" || return 1
@@ -202,7 +130,14 @@ coded_m1091v50h_try_beta() {
     return 1
   fi
 
-  coded_m1091v50i2_patch_beta_payload "$beta_dir" "$beta_version" "$beta_commit"
+  export CODED_RELEASE_STATUS="beta"
+  export CODED_RELEASE_CHANNEL="beta"
+  export CODED_EXPECTED_RELEASE_VERSION="$beta_version"
+  export CODED_EXPECTED_RELEASE_COMMIT="$beta_commit"
+  export CODED_BETA_RUNTIME_ACTIVE="1"
+
+  echo "Status: beta | release_channel=beta | commit=$beta_commit | version=$beta_version"
+  echo "[M1091V50J] beta foreground mode: no runtime payload patching"
 
   for entry in \
     "$beta_dir/start.sh" \
