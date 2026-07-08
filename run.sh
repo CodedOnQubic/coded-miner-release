@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# M1091V51N_FINAL_SAFE_PUBLIC_BETA_AUTOUPDATE_COMPAT
 # M1091V51C_BETA_AS_EFFECTIVE_RELEASE_NORMAL_PUBLIC_FLOW
 coded_m1091v51c_effective_download_url() {
   local default_url
@@ -14,7 +15,7 @@ coded_m1091v51c_print_effective_status() {
   if [ "${CODED_RELEASE_CHANNEL:-latest}" = "beta" ]; then
     echo "Status: beta | release_channel=beta | commit=${CODED_RELEASE_COMMIT:-unknown} | version=${CODED_RELEASE_VERSION:-unknown}"
   else
-    coded_m1091v51c_print_effective_status
+    echo "Status: latest | release_channel=latest"
   fi
 }
 # M1091V51B_MACOS_BETA_PUBLIC_CONSOLE_FLOW
@@ -254,11 +255,18 @@ echo "[M1091V50V] beta asset=$beta_asset_name"
 }
 
 # M1091V50I2_RUN_SH_STATUS_WRAPPER
+# M1091V51N_FINAL_SAFE_PUBLIC_BETA_AUTOUPDATE_COMPAT
 if coded_m1091v50h_beta_requested "$@"; then
   coded_m1091v50h_try_beta "$@" || {
-    export CODED_RELEASE_STATUS="latest"
-    export CODED_RELEASE_CHANNEL="latest"
-    echo "Status: latest | release_channel=latest | beta_fallback=1"
+    if [ "${CODED_BETA_SELECTED_NORMAL_FLOW:-0}" = "1" ]; then
+      export CODED_RELEASE_STATUS="beta"
+      export CODED_RELEASE_CHANNEL="beta"
+      coded_m1091v51c_print_effective_status
+    else
+      export CODED_RELEASE_STATUS="latest"
+      export CODED_RELEASE_CHANNEL="latest"
+      echo "Status: latest | release_channel=latest | beta_fallback=1"
+    fi
   }
 else
   export CODED_RELEASE_STATUS="latest"
@@ -626,7 +634,7 @@ rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
 
 DOWNLOAD_OK=0
-for u in ${ASSET_URLS:-$ASSET_URL}; do
+for u in ${CODED_RELEASE_DOWNLOAD_URL:-} ${ASSET_URLS:-$ASSET_URL}; do
   if curl -fsSL --retry 3 "$u" -o "$TAR_FILE"; then
     DOWNLOAD_OK=1
     ASSET_URL="$u"
