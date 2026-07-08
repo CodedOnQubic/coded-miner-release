@@ -1,4 +1,152 @@
 #!/usr/bin/env bash
+# M1091V50H_RUN_SH_BETA_BOOTSTRAP_VERSION_TAG
+# Public run.sh beta bootstrap:
+# - default path remains unchanged
+# - beta activates only via --beta/-beta, BETA=yes, CODED_BETA=yes, CODED_RELEASE_CHANNEL=beta, or config containing beta=yes
+# - beta asset is downloaded from active beta.version tag, never from GitHub releases/latest
+# - if beta fails, falls back to original public/latest run.sh below
+coded_m1091v50h_beta_requested() {
+  case " $* " in
+    *" --beta "*|*" -beta "*) return 0 ;;
+  esac
+
+  case "${BETA:-}${CODED_BETA:-}${CODED_RELEASE_CHANNEL:-}" in
+    yes|YES|true|TRUE|1|beta|BETA) return 0 ;;
+  esac
+
+  for v in \
+    "${CUSTOM_CONFIG:-}" \
+    "${CUSTOM_USER_CONFIG:-}" \
+    "${HIVE_CUSTOM_CONFIG:-}" \
+    "${USER_CONFIG:-}" \
+    "${MINER_CUSTOM_CONFIG:-}" \
+    "${CODED_USER_CONFIG:-}" \
+    "${EXTRA_CONFIG:-}"
+  do
+    printf '%s\n' "$v" | grep -Eiq '"?beta"?[[:space:]]*[:=][[:space:]]*"?((yes)|(true)|(1))"?' && return 0
+  done
+
+  return 1
+}
+
+coded_m1091v50h_json_field() {
+  file="$1"
+  key="$2"
+
+  [ -f "$file" ] || return 0
+
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$file" "$key" <<'PYJSON'
+import json, sys
+path = sys.argv[1]
+key = sys.argv[2]
+try:
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    sys.exit(0)
+
+cur = data
+for part in key.split("."):
+    if not isinstance(cur, dict):
+        sys.exit(0)
+    cur = cur.get(part)
+
+if cur is None:
+    sys.exit(0)
+
+if isinstance(cur, bool):
+    print("true" if cur else "false")
+else:
+    print(cur)
+PYJSON
+  else
+    grep -E "\"${key##*.}\"[[:space:]]*:" "$file" | head -1 | sed -E 's/.*:[[:space:]]*"?([^",}]+)"?.*/\1/'
+  fi
+}
+
+coded_m1091v50h_try_beta() {
+  [ "${CODED_BETA_BOOTSTRAP_ACTIVE:-}" = "1" ] && return 1
+  coded_m1091v50h_beta_requested "$@" || return 1
+
+  echo "[M1091V50H] beta requested in public run.sh"
+
+  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
+  channel_url="${CODED_RELEASE_CHANNEL_STATUS_URL:-${pool%/}/admin/release/channel-status}"
+
+  tmp_root="${CODED_BETA_TMP_ROOT:-/tmp/coded-m1091v50h-runsh-beta}"
+  rm -rf "$tmp_root"
+  mkdir -p "$tmp_root"
+
+  status_json="$tmp_root/channel-status.json"
+
+  if ! curl -fsSL --max-time 15 "$channel_url" -o "$status_json"; then
+    echo "[M1091V50H] beta channel-status unavailable; falling back to public latest"
+    return 1
+  fi
+
+  beta_version="$(coded_m1091v50h_json_field "$status_json" beta.version || true)"
+  beta_commit="$(coded_m1091v50h_json_field "$status_json" beta.commit || true)"
+  beta_asset_ok="$(coded_m1091v50h_json_field "$status_json" beta.assets.linux.ok || true)"
+
+  if [ -z "$beta_version" ] || [ "$beta_version" = "null" ]; then
+    echo "[M1091V50H] no active beta version; falling back to public latest"
+    return 1
+  fi
+
+  if [ "$beta_asset_ok" = "false" ]; then
+    echo "[M1091V50H] beta linux asset not ok; falling back to public latest"
+    return 1
+  fi
+
+  beta_url="https://github.com/CodedOnQubic/coded-miner-release/releases/download/${beta_version}/coded-miner-beta-latest.tar.gz"
+  beta_tgz="$tmp_root/coded-miner-beta-latest.tar.gz"
+  beta_dir="$tmp_root/pkg"
+
+  echo "[M1091V50H] beta version=$beta_version"
+  echo "[M1091V50H] beta commit=$beta_commit"
+  echo "[M1091V50H] beta url=$beta_url"
+
+  if [ "${CODED_BETA_RESOLVE_ONLY:-}" = "1" ]; then
+    echo "[M1091V50H] resolve-only ok"
+    return 0
+  fi
+
+  if ! curl -fL --retry 2 --retry-delay 2 --max-time 120 "$beta_url" -o "$beta_tgz"; then
+    echo "[M1091V50H] beta download failed; falling back to public latest"
+    return 1
+  fi
+
+  mkdir -p "$beta_dir"
+
+  if ! tar -xzf "$beta_tgz" -C "$beta_dir"; then
+    echo "[M1091V50H] beta extract failed; falling back to public latest"
+    return 1
+  fi
+
+  for entry in \
+    "$beta_dir/h-run.sh" \
+    "$beta_dir/start.sh" \
+    "$beta_dir/coded-miner/h-run.sh" \
+    "$beta_dir/coded-miner/start.sh"
+  do
+    if [ -f "$entry" ]; then
+      echo "[M1091V50H] starting beta entry=$entry"
+      export CODED_BETA_BOOTSTRAP_ACTIVE=1
+      export CODED_BETA_RUNTIME_ACTIVE=1
+      export CODED_RELEASE_CHANNEL=beta
+      export CODED_EXPECTED_RELEASE_VERSION="$beta_version"
+      export CODED_EXPECTED_RELEASE_COMMIT="$beta_commit"
+      exec bash "$entry" "$@"
+    fi
+  done
+
+  echo "[M1091V50H] no beta entrypoint found; falling back to public latest"
+  return 1
+}
+
+coded_m1091v50h_try_beta "$@" || true
+# M1091V50H fallback continues with original public/latest run.sh below.
 
 # M1091V29C3_PUBLIC_MAC_ARM_AUTO_NEON_DEFAULTS
 # Public one-liner contract:
