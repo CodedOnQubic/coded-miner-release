@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # M1091V51J_PUBLIC_RUNSH_EFFECTIVE_RELEASE_SUPERVISOR
+# M1091V51K_PUBLIC_SUPERVISOR_JSON_PARSE_FIX
 # Parent supervisor only. The child remains the known-good public runner.
 # Contract:
 # - latest default checks public latest.
@@ -72,24 +73,25 @@ coded_m1091v51j_public_release_line() {
     return 0
   fi
 
-  printf '%s\n' "$status_json" | python3 - "$want_beta" "$platform" <<'PYREL'
+  STATUS_JSON="$status_json" python3 -c '
 import json
+import os
 import sys
 
 want_beta = sys.argv[1] == "1"
 platform = sys.argv[2]
 
 try:
-    d = json.load(sys.stdin)
+    d = json.loads(os.environ.get("STATUS_JSON") or "{}")
 except Exception:
-    sys.exit(1)
+    d = {}
 
 repo = "https://github.com/CodedOnQubic/coded-miner-release/releases"
 
 latest = d.get("public_latest") or {}
 beta = d.get("beta") or None
 
-def asset_for(channel: str) -> str:
+def asset_for(channel):
     if platform == "macos-arm64":
         return "coded-miner-macos-arm64-beta-latest.tar.gz" if channel == "beta" else "coded-miner-macos-arm64-latest.tar.gz"
     return "coded-miner-beta-latest.tar.gz" if channel == "beta" else "coded-miner-latest.tar.gz"
@@ -99,7 +101,7 @@ if want_beta and beta and beta.get("version") and beta.get("commit"):
     version = str(beta.get("version") or "")
     commit = str(beta.get("commit") or "")
     asset = asset_for(channel)
-    url = f"{repo}/download/{version}/{asset}"
+    url = repo + "/download/" + version + "/" + asset
     print("|".join([channel, version, commit, asset, url]))
     sys.exit(0)
 
@@ -107,12 +109,9 @@ channel = "latest"
 version = str(latest.get("version") or "")
 commit = str(latest.get("commit") or "")
 asset = asset_for(channel)
-if version:
-    url = f"{repo}/download/{version}/{asset}"
-else:
-    url = f"{repo}/latest/download/{asset}"
+url = repo + "/download/" + version + "/" + asset if version else repo + "/latest/download/" + asset
 print("|".join([channel, version, commit, asset, url]))
-PYREL
+' "$want_beta" "$platform"
 }
 
 coded_m1091v51j_stop_child() {
@@ -136,6 +135,7 @@ coded_m1091v51j_start_child() {
   local line channel version commit asset url run_url
 
   line="$1"
+  shift || true
   IFS='|' read -r channel version commit asset url <<EOF
 $line
 EOF
