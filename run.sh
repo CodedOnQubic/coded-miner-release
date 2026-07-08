@@ -1,4 +1,212 @@
 #!/usr/bin/env bash
+# M1091V51J_PUBLIC_RUNSH_EFFECTIVE_RELEASE_SUPERVISOR
+# Parent supervisor only. The child remains the known-good public runner.
+# Contract:
+# - latest default checks public latest.
+# - -- -beta / CODED_BETA=yes checks active beta; if no active beta, falls back to latest.
+# - Every CODED_PUBLIC_UPDATE_SEC seconds, restart child only when selected release key changes.
+# - Child still owns loader, install, miner, console and analytics.
+coded_m1091v51j_public_beta_requested() {
+  case " ${0:-} $* " in
+    *" --beta "*|*" -beta "*) return 0 ;;
+  esac
+
+  case "$(printf '%s' "${CODED_BETA:-${BETA:-${beta:-}}}" | tr '[:upper:]' '[:lower:]')" in
+    yes|true|1|beta) return 0 ;;
+  esac
+
+  case "$(printf '%s' "${CODED_RELEASE_CHANNEL:-}" | tr '[:upper:]' '[:lower:]')" in
+    beta) return 0 ;;
+  esac
+
+  for v in \
+    "${CUSTOM_CONFIG:-}" \
+    "${CUSTOM_USER_CONFIG:-}" \
+    "${HIVE_CUSTOM_CONFIG:-}" \
+    "${USER_CONFIG:-}" \
+    "${MINER_CUSTOM_CONFIG:-}" \
+    "${CODED_USER_CONFIG:-}" \
+    "${EXTRA_CONFIG:-}" \
+    "${CUSTOM_JSON:-}"
+  do
+    printf '%s\n' "$v" | grep -Eiq '"?beta"?[[:space:]]*[:=][[:space:]]*"?(yes|true|1|beta)"?' && return 0
+  done
+
+  return 1
+}
+
+coded_m1091v51j_public_platform() {
+  local os arch
+  os="$(uname -s 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+  arch="$(uname -m 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+
+  case "${os}:${arch}" in
+    darwin:arm64|darwin:aarch64) printf '%s\n' "macos-arm64" ;;
+    linux:x86_64|linux:amd64) printf '%s\n' "linux-amd64" ;;
+    *) printf '%s\n' "${os}-${arch}" ;;
+  esac
+}
+
+coded_m1091v51j_public_release_line() {
+  local want_beta platform pool status_json
+
+  want_beta=0
+  if coded_m1091v51j_public_beta_requested "$@"; then
+    want_beta=1
+  fi
+
+  platform="$(coded_m1091v51j_public_platform)"
+  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
+
+  status_json="$(curl -fsSL --connect-timeout 5 --max-time 15 "${pool%/}/admin/release/channel-status" 2>/dev/null || true)"
+
+  if [ -z "$status_json" ]; then
+    case "$platform" in
+      macos-arm64)
+        printf '%s\n' "latest|unknown|unknown|coded-miner-macos-arm64-latest.tar.gz|https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz"
+        ;;
+      *)
+        printf '%s\n' "latest|unknown|unknown|coded-miner-latest.tar.gz|https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz"
+        ;;
+    esac
+    return 0
+  fi
+
+  printf '%s\n' "$status_json" | python3 - "$want_beta" "$platform" <<'PYREL'
+import json
+import sys
+
+want_beta = sys.argv[1] == "1"
+platform = sys.argv[2]
+
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+
+repo = "https://github.com/CodedOnQubic/coded-miner-release/releases"
+
+latest = d.get("public_latest") or {}
+beta = d.get("beta") or None
+
+def asset_for(channel: str) -> str:
+    if platform == "macos-arm64":
+        return "coded-miner-macos-arm64-beta-latest.tar.gz" if channel == "beta" else "coded-miner-macos-arm64-latest.tar.gz"
+    return "coded-miner-beta-latest.tar.gz" if channel == "beta" else "coded-miner-latest.tar.gz"
+
+if want_beta and beta and beta.get("version") and beta.get("commit"):
+    channel = "beta"
+    version = str(beta.get("version") or "")
+    commit = str(beta.get("commit") or "")
+    asset = asset_for(channel)
+    url = f"{repo}/download/{version}/{asset}"
+    print("|".join([channel, version, commit, asset, url]))
+    sys.exit(0)
+
+channel = "latest"
+version = str(latest.get("version") or "")
+commit = str(latest.get("commit") or "")
+asset = asset_for(channel)
+if version:
+    url = f"{repo}/download/{version}/{asset}"
+else:
+    url = f"{repo}/latest/download/{asset}"
+print("|".join([channel, version, commit, asset, url]))
+PYREL
+}
+
+coded_m1091v51j_stop_child() {
+  local pid="$1"
+
+  [ -n "$pid" ] || return 0
+  kill -0 "$pid" 2>/dev/null || return 0
+
+  echo "[M1091V51J] stopping child pid=$pid for release switch"
+  kill "$pid" 2>/dev/null || true
+
+  for _ in 1 2 3 4 5; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 1
+  done
+
+  kill -9 "$pid" 2>/dev/null || true
+}
+
+coded_m1091v51j_start_child() {
+  local line channel version commit asset url run_url
+
+  line="$1"
+  IFS='|' read -r channel version commit asset url <<EOF
+$line
+EOF
+
+  run_url="${CODED_PUBLIC_RUNSH_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh}"
+
+  echo "[M1091V51J] start child channel=$channel commit=${commit:-unknown} asset=$asset"
+  echo "[M1091V51J] url=$url"
+
+  CODED_RUNSH_SUPERVISOR_CHILD=1 \
+  CODED_RELEASE_STATUS="$channel" \
+  CODED_RELEASE_CHANNEL="$channel" \
+  CODED_RELEASE_COMMIT="$commit" \
+  CODED_RELEASE_VERSION="$version" \
+  CODED_MINER_COMMIT="$commit" \
+  CODED_MINER_VERSION="$version" \
+  GIT_COMMIT="$commit" \
+  RELEASE_VERSION="$version" \
+  CODED_RELEASE_ASSET_NAME="$asset" \
+  CODED_RELEASE_DOWNLOAD_URL="$url" \
+  bash -c "$(curl -fsSL "${run_url}?cb=$(date +%s)")" -- "$@" &
+
+  CODED_V51J_CHILD_PID="$!"
+}
+
+coded_m1091v51j_supervise() {
+  local interval line key current_key child_pid
+
+  interval="${CODED_PUBLIC_UPDATE_SEC:-60}"
+  current_key=""
+  child_pid=""
+
+  trap 'coded_m1091v51j_stop_child "$child_pid"; exit 0' INT TERM EXIT
+
+  echo "[M1091V51J] public run.sh supervisor active interval=${interval}s"
+  echo "[M1091V51J] child remains known-good public runner"
+
+  while true; do
+    line="$(coded_m1091v51j_public_release_line "$@" || true)"
+
+    if [ -z "$line" ]; then
+      echo "[M1091V51J] release status unavailable; keeping current child"
+      sleep "$interval"
+      continue
+    fi
+
+    key="$line"
+
+    if [ -z "$child_pid" ] || ! kill -0 "$child_pid" 2>/dev/null; then
+      current_key=""
+    fi
+
+    if [ "$key" != "$current_key" ]; then
+      if [ -n "$child_pid" ] && kill -0 "$child_pid" 2>/dev/null; then
+        coded_m1091v51j_stop_child "$child_pid"
+      fi
+
+      CODED_V51J_CHILD_PID=""
+      coded_m1091v51j_start_child "$line" "$@"
+      child_pid="$CODED_V51J_CHILD_PID"
+      current_key="$key"
+    fi
+
+    sleep "$interval"
+  done
+}
+
+if [ "${CODED_RUNSH_SUPERVISOR_CHILD:-0}" != "1" ] && [ "${CODED_RUNSH_SUPERVISOR_DISABLE:-0}" != "1" ]; then
+  coded_m1091v51j_supervise "$@"
+  exit $?
+fi
 # M1091V51C_BETA_AS_EFFECTIVE_RELEASE_NORMAL_PUBLIC_FLOW
 coded_m1091v51c_effective_download_url() {
   local default_url
