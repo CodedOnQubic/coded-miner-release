@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# M1091V50Y_MACOS_BETA_WRAPPER_WITH_TELEMETRY_ENV
+# M1091V51B_MACOS_BETA_PUBLIC_CONSOLE_FLOW
 coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
-  local root pkg console bin worker wallet threads pool_url
+  local root pkg console bin worker wallet threads pool_url run_log miner_pid
 
   root="/tmp/coded-m1091v50h-runsh-beta/pkg"
 
@@ -36,22 +36,28 @@ coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
     "$root"
   do
     console="$pkg/coded-public-console.py"
-    if [ -f "$console" ]; then
-      echo "[M1091V50Y] starting macOS beta console wrapper=$console worker=$worker commit=${CODED_RELEASE_COMMIT:-unknown}"
-      cd "$pkg" || return 1
-      exec python3 ./coded-public-console.py
-    fi
-  done
+    bin="$pkg/coded-miner"
 
-  # Last-resort fallback only. Prefer the console wrapper because it carries wallet/worker/analytics.
-  for bin in \
-    "$root/coded-miner/coded-miner" \
-    "$root/coded-miner" \
-    "$root/pkg/coded-miner/coded-miner"
-  do
     if [ -x "$bin" ]; then
-      echo "[M1091V50Y] starting macOS beta binary fallback=$bin worker=$worker commit=${CODED_RELEASE_COMMIT:-unknown}"
-      exec "$bin"
+      cd "$pkg" || return 1
+
+      run_log="${TMPDIR:-/tmp}/coded-miner-beta-${worker}.log"
+      : > "$run_log" 2>/dev/null || run_log="/tmp/coded-miner-beta-${worker}.log"
+      : > "$run_log" 2>/dev/null || true
+
+      echo "[M1091V51B] starting macOS beta public console flow worker=$worker commit=${CODED_RELEASE_COMMIT:-unknown}"
+      echo "[M1091V51B] beta bin=$bin"
+      echo "[M1091V51B] beta log=$run_log"
+
+      "$bin" > "$run_log" 2>&1 &
+      miner_pid="$!"
+
+      if [ -f "$console" ] && command -v python3 >/dev/null 2>&1; then
+        exec python3 "$console" "$run_log" "$miner_pid"
+      fi
+
+      echo "[M1091V51B] console missing; tailing beta miner log"
+      exec tail -f "$run_log"
     fi
   done
 
