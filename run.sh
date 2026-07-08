@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+# M1091V51C_BETA_AS_EFFECTIVE_RELEASE_NORMAL_PUBLIC_FLOW
+coded_m1091v51c_effective_download_url() {
+  local default_url
+  default_url="$1"
+  if [ -n "${CODED_RELEASE_DOWNLOAD_URL:-}" ]; then
+    printf '%s\n' "$CODED_RELEASE_DOWNLOAD_URL"
+  else
+    printf '%s\n' "$default_url"
+  fi
+}
+
+coded_m1091v51c_print_effective_status() {
+  if [ "${CODED_RELEASE_CHANNEL:-latest}" = "beta" ]; then
+    echo "Status: beta | release_channel=beta | commit=${CODED_RELEASE_COMMIT:-unknown} | version=${CODED_RELEASE_VERSION:-unknown}"
+  else
+    coded_m1091v51c_print_effective_status
+  fi
+}
 # M1091V51B_MACOS_BETA_PUBLIC_CONSOLE_FLOW
 coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
   local root pkg console bin worker wallet threads pool_url run_log miner_pid
@@ -212,59 +230,26 @@ echo "[M1091V50V] beta asset=$beta_asset_name"
   fi
 
   beta_url="https://github.com/CodedOnQubic/coded-miner-release/releases/download/${beta_version}/${beta_asset_name:-coded-miner-beta-latest.tar.gz}"
-  beta_tgz="$tmp_root/${beta_asset_name:-coded-miner-beta-latest.tar.gz}"
-  beta_dir="$tmp_root/pkg"
 
-  echo "[M1091V50H] beta version=$beta_version"
-  echo "[M1091V50H] beta commit=$beta_commit"
-  echo "[M1091V50H] beta url=$beta_url"
-
-  if [ "${CODED_BETA_RESOLVE_ONLY:-}" = "1" ]; then
-    echo "[M1091V50H] resolve-only ok"
-    exit 0
-  fi
-
-  if ! curl -fL --retry 2 --retry-delay 2 --max-time 120 "$beta_url" -o "$beta_tgz"; then
-    echo "[M1091V50H] beta download failed; falling back to public latest"
-    return 1
-  fi
-
-  mkdir -p "$beta_dir"
-
-  if ! tar -xzf "$beta_tgz" -C "$beta_dir"; then
-    echo "[M1091V50H] beta extract failed; falling back to public latest"
-    return 1
-  fi
-
-  export CODED_RELEASE_STATUS="beta"
   export CODED_RELEASE_CHANNEL="beta"
-  export CODED_EXPECTED_RELEASE_VERSION="$beta_version"
-  export CODED_EXPECTED_RELEASE_COMMIT="$beta_commit"
-  export CODED_BETA_RUNTIME_ACTIVE="1"
+  export CODED_RELEASE_COMMIT="$beta_commit"
+  export CODED_RELEASE_VERSION="$beta_version"
+  export CODED_MINER_COMMIT="$beta_commit"
+  export CODED_MINER_VERSION="$beta_version"
+  export GIT_COMMIT="$beta_commit"
+  export RELEASE_VERSION="$beta_version"
+  export CODED_RELEASE_ASSET_NAME="${beta_asset_name:-coded-miner-beta-latest.tar.gz}"
+  export CODED_RELEASE_DOWNLOAD_URL="$beta_url"
+  export CODED_BETA_SELECTED_NORMAL_FLOW="1"
 
-  echo "Status: beta | release_channel=beta | commit=$beta_commit | version=$beta_version"
-  echo "[M1091V50J] beta foreground mode: no runtime payload patching"
+  echo "[M1091V51C] beta selected as effective release"
+  echo "[M1091V51C] beta asset=${CODED_RELEASE_ASSET_NAME}"
+  echo "[M1091V51C] beta url=${CODED_RELEASE_DOWNLOAD_URL}"
+  echo "[M1091V51C] continuing through normal public runner autoupdate/log flow"
+  echo "Status: beta | release_channel=beta | commit=${CODED_RELEASE_COMMIT} | version=${CODED_RELEASE_VERSION}"
 
-  for entry in \
-    "$beta_dir/start.sh" \
-    "$beta_dir/coded-miner/start.sh" \
-    "$beta_dir/h-run.sh" \
-    "$beta_dir/coded-miner/h-run.sh"
-  do
-    if [ -f "$entry" ]; then
-      echo "[M1091V50H] starting beta entry=$entry"
-      export CODED_BETA_BOOTSTRAP_ACTIVE=1
-      export CODED_BETA_RUNTIME_ACTIVE=1
-      export CODED_RELEASE_CHANNEL=beta
-      export CODED_EXPECTED_RELEASE_VERSION="$beta_version"
-      export CODED_EXPECTED_RELEASE_COMMIT="$beta_commit"
-      exec bash "$entry" "$@"
-    fi
-  done
-
-
-  coded_m1091v50y_exec_macos_beta_wrapper_if_present || coded_m1091v50v_exec_macos_beta_binary_if_present || true
-  echo "[M1091V50H] no beta entrypoint found; falling back to public latest"
+  # Return non-zero intentionally: caller uses `try_beta || true`,
+  # so normal public runner continues with CODED_RELEASE_DOWNLOAD_URL override.
   return 1
 }
 
@@ -278,7 +263,7 @@ if coded_m1091v50h_beta_requested "$@"; then
 else
   export CODED_RELEASE_STATUS="latest"
   export CODED_RELEASE_CHANNEL="latest"
-  echo "Status: latest | release_channel=latest"
+  coded_m1091v51c_print_effective_status
 fi
 
 # M1091V50H fallback continues with original public/latest run.sh below.
@@ -389,7 +374,7 @@ if [ "$THREADS" = "0" ] || [ -z "$THREADS" ]; then
 fi
 
 PLATFORM="linux-amd64"
-ASSET_URL="${CODED_LINUX_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz}"
+ASSET_URL="${CODED_LINUX_LATEST_URL:-${CODED_RELEASE_DOWNLOAD_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz}}"
 
 case "$OS/$ARCH" in
   darwin/arm64|darwin/aarch64)
@@ -397,13 +382,13 @@ case "$OS/$ARCH" in
       # M1091V32A3_PUBLIC_MAC_RELEASE_ASSET_FIRST
       # Prefer real button-published GitHub release assets.
       # Raw main tarballs are fallback only because they can lag behind release/latest.
-      ASSET_URL="${CODED_MAC_ARM_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz}"
-      ASSET_URLS="${CODED_MAC_ARM_LATEST_URLS:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest-macos-arm64.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64-latest.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64.tar.gz}"
+      ASSET_URL="${CODED_MAC_ARM_LATEST_URL:-${CODED_RELEASE_DOWNLOAD_URL:-${CODED_RELEASE_DOWNLOAD_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz}}}"
+      ASSET_URLS="${CODED_MAC_ARM_LATEST_URLS:-${CODED_RELEASE_DOWNLOAD_URL:-${CODED_RELEASE_DOWNLOAD_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64-latest.tar.gz}} ${CODED_RELEASE_DOWNLOAD_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-macos-arm64.tar.gz} ${CODED_RELEASE_DOWNLOAD_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest-macos-arm64.tar.gz} https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64-latest.tar.gz https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/coded-miner-macos-arm64.tar.gz}"
     ;;
   linux/x86_64|linux/amd64)
     PLATFORM="linux-amd64"
-    ASSET_URL="${CODED_LINUX_LATEST_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz}"
-    ASSET_URLS="${CODED_LINUX_LATEST_URLS:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz}"
+    ASSET_URL="${CODED_LINUX_LATEST_URL:-${CODED_RELEASE_DOWNLOAD_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz}}"
+    ASSET_URLS="${CODED_LINUX_LATEST_URLS:-${CODED_RELEASE_DOWNLOAD_URL:-https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz}}"
     ;;
   *)
     echo "ERROR: unsupported platform $OS/$ARCH"
