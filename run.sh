@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # M1091V51J_PUBLIC_RUNSH_EFFECTIVE_RELEASE_SUPERVISOR
 # M1091V51K_PUBLIC_SUPERVISOR_JSON_PARSE_FIX
+# M1091V51L_SUPERVISOR_CHILD_USES_PARENT_RELEASE
 # Parent supervisor only. The child remains the known-good public runner.
 # Contract:
 # - latest default checks public latest.
@@ -114,21 +115,76 @@ print("|".join([channel, version, commit, asset, url]))
 ' "$want_beta" "$platform"
 }
 
+
+coded_m1091v51l_worker_safe() {
+  local raw
+  raw="${WORKER:-${CODED_WORKER:-${CODED_WORKER_NAME:-$(hostname 2>/dev/null || echo public-worker)}}}"
+  printf '%s' "$raw" | tr -cd 'A-Za-z0-9._-' | cut -c1-64
+}
+
+coded_m1091v51l_stop_public_worker_processes() {
+  local worker_safe base latest pid cmd
+
+  worker_safe="$(coded_m1091v51l_worker_safe)"
+  [ -n "$worker_safe" ] || worker_safe="public-worker"
+
+  base="${CODED_BASE_DIR:-$HOME/.coded-miner/public}"
+  latest="$base/$worker_safe/latest"
+
+  echo "[M1091V51L] stopping public worker processes worker=$worker_safe path=$latest"
+
+  if [ -d "$base/$worker_safe/pids" ]; then
+    for pf in "$base/$worker_safe/pids/"*.pid; do
+      [ -f "$pf" ] || continue
+      pid="$(cat "$pf" 2>/dev/null || true)"
+      if [ -n "$pid" ]; then
+        kill "$pid" 2>/dev/null || true
+      fi
+      rm -f "$pf" 2>/dev/null || true
+    done
+  fi
+
+  for needle in coded-miner coded-runtime-sidecar.py coded-public-console.py; do
+    pgrep -f "$needle" 2>/dev/null | while read -r pid; do
+      cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      case "$cmd" in
+        *"$latest"*)
+          kill "$pid" 2>/dev/null || true
+        ;;
+      esac
+    done
+  done
+
+  sleep 1
+
+  for needle in coded-miner coded-runtime-sidecar.py coded-public-console.py; do
+    pgrep -f "$needle" 2>/dev/null | while read -r pid; do
+      cmd="$(ps -p "$pid" -o command= 2>/dev/null || true)"
+      case "$cmd" in
+        *"$latest"*)
+          kill -9 "$pid" 2>/dev/null || true
+        ;;
+      esac
+    done
+  done
+}
+
 coded_m1091v51j_stop_child() {
   local pid="$1"
 
-  [ -n "$pid" ] || return 0
-  kill -0 "$pid" 2>/dev/null || return 0
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+    echo "[M1091V51J] stopping child pid=$pid for release switch"
+    kill "$pid" 2>/dev/null || true
 
-  echo "[M1091V51J] stopping child pid=$pid for release switch"
-  kill "$pid" 2>/dev/null || true
+    for _ in 1 2 3 4 5; do
+      kill -0 "$pid" 2>/dev/null || break
+      sleep 1
+    done
 
-  for _ in 1 2 3 4 5; do
-    kill -0 "$pid" 2>/dev/null || return 0
-    sleep 1
-  done
+    kill -9 "$pid" 2>/dev/null || true
+  fi
 
-  kill -9 "$pid" 2>/dev/null || true
+  coded_m1091v51l_stop_public_worker_processes || true
 }
 
 coded_m1091v51j_start_child() {
@@ -146,6 +202,8 @@ EOF
   echo "[M1091V51J] url=$url"
 
   CODED_RUNSH_SUPERVISOR_CHILD=1 \
+  CODED_BETA_BOOTSTRAP_ACTIVE=1 \
+  CODED_BETA_RUNTIME_ACTIVE=1 \
   CODED_RELEASE_STATUS="$channel" \
   CODED_RELEASE_CHANNEL="$channel" \
   CODED_RELEASE_COMMIT="$commit" \
@@ -462,7 +520,13 @@ echo "[M1091V50V] beta asset=$beta_asset_name"
 }
 
 # M1091V50I2_RUN_SH_STATUS_WRAPPER
-if coded_m1091v50h_beta_requested "$@"; then
+# M1091V51L_SUPERVISOR_CHILD_USES_PARENT_RELEASE
+if [ "${CODED_RUNSH_SUPERVISOR_CHILD:-0}" = "1" ]; then
+  : "${CODED_RELEASE_CHANNEL:=latest}"
+  : "${CODED_RELEASE_STATUS:=$CODED_RELEASE_CHANNEL}"
+  export CODED_RELEASE_CHANNEL CODED_RELEASE_STATUS
+  coded_m1091v51c_print_effective_status
+elif coded_m1091v50h_beta_requested "$@"; then
   coded_m1091v50h_try_beta "$@" || {
     export CODED_RELEASE_STATUS="latest"
     export CODED_RELEASE_CHANNEL="latest"
