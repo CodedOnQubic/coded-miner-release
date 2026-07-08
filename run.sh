@@ -6,7 +6,11 @@
 # - beta asset is downloaded from active beta.version tag, never from GitHub releases/latest
 # - if beta fails, falls back to original public/latest run.sh below
 coded_m1091v50h_beta_requested() {
-  case " $* " in
+  # M1091V50I2_RUN_SH_BETA_ARG0_SUPPORT
+  # Supports both:
+  #   bash -c "$(curl ...)" -- -beta
+  #   bash -c "$(curl ...)" -beta
+  case " ${0:-} $* " in
     *" --beta "*|*" -beta "*) return 0 ;;
   esac
 
@@ -65,6 +69,80 @@ PYJSON
   fi
 }
 
+
+# M1091V50I2_RUN_SH_BETA_FOREGROUND_STATUS
+coded_m1091v50i2_patch_beta_payload() {
+  beta_dir="$1"
+  beta_version="$2"
+  beta_commit="$3"
+
+  export CODED_RELEASE_STATUS="beta"
+  export CODED_RELEASE_CHANNEL="beta"
+  export CODED_EXPECTED_RELEASE_VERSION="$beta_version"
+  export CODED_EXPECTED_RELEASE_COMMIT="$beta_commit"
+  export CODED_BETA_RUNTIME_ACTIVE="1"
+
+  echo "[M1091V50I2] Status: beta | release_channel=beta | commit=$beta_commit | version=$beta_version"
+  echo "[M1091V50I2] beta foreground mode: prefer start.sh over h-run.sh"
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "[M1091V50I2] python3 unavailable; beta payload lock skipped"
+    return 0
+  fi
+
+  python3 - "$beta_dir" "$beta_version" "$beta_commit" <<'PYLOCK'
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+version = sys.argv[2]
+commit = sys.argv[3]
+
+marker = "M1091V50I2_BETA_PAYLOAD_LOCKED_BY_RUN_SH"
+
+targets = [
+    root / "start.sh",
+    root / "h-run.sh",
+    root / "coded-miner" / "start.sh",
+    root / "coded-miner" / "h-run.sh",
+]
+
+exports = (
+    f"# {marker}\n"
+    "export CODED_RELEASE_STATUS=\"beta\"\n"
+    "export CODED_RELEASE_CHANNEL=\"beta\"\n"
+    f"export CODED_EXPECTED_RELEASE_VERSION=\"{version}\"\n"
+    f"export CODED_EXPECTED_RELEASE_COMMIT=\"{commit}\"\n"
+    "export CODED_BETA_RUNTIME_ACTIVE=\"1\"\n"
+    f"echo \"Status: beta | release_channel=beta | commit={commit} | version={version}\"\n"
+)
+
+for path in targets:
+    if not path.exists():
+        continue
+
+    text = path.read_text(errors="ignore")
+
+    # Prevent inner bootstrap/update from replacing beta with public latest.
+    text = text.replace("releases/latest/download", f"releases/download/{version}")
+    text = text.replace("coded-miner-latest.tar.gz", "coded-miner-beta-latest.tar.gz")
+
+    if marker not in text:
+        lines = text.splitlines()
+        insert_at = 1 if lines and lines[0].startswith("#!") else 0
+        lines.insert(insert_at, exports.rstrip())
+        text = "\n".join(lines) + "\n"
+
+    path.write_text(text)
+    try:
+        path.chmod(path.stat().st_mode | 0o111)
+    except Exception:
+        pass
+
+    print(f"[M1091V50I2] patched beta payload file={path}")
+PYLOCK
+}
+
 coded_m1091v50h_try_beta() {
   [ "${CODED_BETA_BOOTSTRAP_ACTIVE:-}" = "1" ] && return 1
   coded_m1091v50h_beta_requested "$@" || return 1
@@ -109,7 +187,7 @@ coded_m1091v50h_try_beta() {
 
   if [ "${CODED_BETA_RESOLVE_ONLY:-}" = "1" ]; then
     echo "[M1091V50H] resolve-only ok"
-    return 0
+    exit 0
   fi
 
   if ! curl -fL --retry 2 --retry-delay 2 --max-time 120 "$beta_url" -o "$beta_tgz"; then
@@ -124,11 +202,13 @@ coded_m1091v50h_try_beta() {
     return 1
   fi
 
+  coded_m1091v50i2_patch_beta_payload "$beta_dir" "$beta_version" "$beta_commit"
+
   for entry in \
-    "$beta_dir/h-run.sh" \
     "$beta_dir/start.sh" \
-    "$beta_dir/coded-miner/h-run.sh" \
-    "$beta_dir/coded-miner/start.sh"
+    "$beta_dir/coded-miner/start.sh" \
+    "$beta_dir/h-run.sh" \
+    "$beta_dir/coded-miner/h-run.sh"
   do
     if [ -f "$entry" ]; then
       echo "[M1091V50H] starting beta entry=$entry"
@@ -145,7 +225,19 @@ coded_m1091v50h_try_beta() {
   return 1
 }
 
-coded_m1091v50h_try_beta "$@" || true
+# M1091V50I2_RUN_SH_STATUS_WRAPPER
+if coded_m1091v50h_beta_requested "$@"; then
+  coded_m1091v50h_try_beta "$@" || {
+    export CODED_RELEASE_STATUS="latest"
+    export CODED_RELEASE_CHANNEL="latest"
+    echo "Status: latest | release_channel=latest | beta_fallback=1"
+  }
+else
+  export CODED_RELEASE_STATUS="latest"
+  export CODED_RELEASE_CHANNEL="latest"
+  echo "Status: latest | release_channel=latest"
+fi
+
 # M1091V50H fallback continues with original public/latest run.sh below.
 
 # M1091V29C3_PUBLIC_MAC_ARM_AUTO_NEON_DEFAULTS
