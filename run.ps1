@@ -27,6 +27,12 @@ param(
 # M1091V54C_WINDOWS_SINGLE_SESSION_RESTART_CLEANUP
 # M1091V54D_WINDOWS_CLEAN_SINGLE_RUNNER
 # M1091V54J_WINDOWS_REENTER_WITHOUT_ARRAY_SPLATTING
+# M1091V54K_PUBLIC_COSMETIC_AUTOUPDATE_TRANSITION
+function Write-CodedPublicDebugV54K([string]$Message) {
+  if ($env:CODED_PUBLIC_DEBUG -eq "1") {
+    Write-Host $Message
+  }
+}
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -580,10 +586,10 @@ function Send-CodedReleaseStatusV43Y {
       $wc = New-Object System.Net.WebClient
       $wc.Headers.Add("Content-Type", "application/json")
       [void]$wc.UploadString("$api/api/miner/release-status", "POST", $payload)
-      Write-Host "[PUBLIC] M1091V43Y_WINDOWS_RUNPS1_RELEASE_STATUS_POST worker=$w commit=$($commit.ToLowerInvariant()) backend=$b"
+      Write-CodedPublicDebugV54K "[PUBLIC] M1091V43Y_WINDOWS_RUNPS1_RELEASE_STATUS_POST worker=$w commit=$($commit.ToLowerInvariant()) backend=$b"
     }
   } catch {
-    Write-Host "[PUBLIC] M1091V43Y_WINDOWS_RUNPS1_RELEASE_STATUS_POST_ERROR $($_.Exception.Message)"
+    Write-CodedPublicDebugV54K "[PUBLIC] M1091V43Y_WINDOWS_RUNPS1_RELEASE_STATUS_POST_ERROR $($_.Exception.Message)"
   }
 }
 
@@ -646,7 +652,7 @@ function Get-CodedWindowsReleaseSelectionV53B {
       return New-CodedWindowsReleaseSelectionV53B "latest" $version $commit $asset $url
     }
   } catch {
-    Write-Host "[PUBLIC] M1091V53B channel-status fallback: $($_.Exception.Message)"
+    Write-CodedPublicDebugV54K "[PUBLIC] M1091V53B channel-status fallback: $($_.Exception.Message)"
   }
 
   try {
@@ -753,7 +759,7 @@ function Start-CodedWindowsSafeAutoupdate {
         if (-not $latest) { continue }
 
         if ($latest -eq $CurrentCommit) {
-          Write-Host "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker up_to_date local=$CurrentCommit latest=$latest"
+          Write-CodedPublicDebugV54K "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker up_to_date local=$CurrentCommit latest=$latest"
           continue
         }
 
@@ -773,14 +779,14 @@ function Start-CodedWindowsSafeAutoupdate {
 
         $age = $now - $lastTs
         if ($lastCommit -eq $latest -and $age -lt 900) {
-          Write-Host "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker update_already_requested local=$CurrentCommit latest=$latest age_sec=$age"
+          Write-CodedPublicDebugV54K "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker update_already_requested local=$CurrentCommit latest=$latest age_sec=$age"
           continue
         }
 
         "$latest $now" | Set-Content -Path $Last -Encoding ASCII
         "update_needed local=$CurrentCommit latest=$latest version=$version" | Set-Content -Path $Flag -Encoding ASCII
 
-        Write-Host "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker update_needed local=$CurrentCommit latest=$latest version=$version action=stop_miner"
+        Write-CodedPublicDebugV54K "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE worker=$Worker update_needed local=$CurrentCommit latest=$latest version=$version action=stop_miner"
 
         Get-Process -ErrorAction SilentlyContinue | Where-Object {
           $_.Path -and ($_.Path -eq $ExePath)
@@ -789,7 +795,7 @@ function Start-CodedWindowsSafeAutoupdate {
         break
       }
       catch {
-        Write-Host "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE_ERROR worker=$Worker error=$($_.Exception.Message)"
+        Write-CodedPublicDebugV54K "[PUBLIC] M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE_ERROR worker=$Worker error=$($_.Exception.Message)"
       }
     }
   } -ArgumentList $Root, $CurrentCommit, $ExePath, $Worker, $sec, $flag, $last | Out-Null
@@ -907,7 +913,7 @@ function Start-CodedWindowsChannelAutoupdateV53B {
         $targetKey = "$targetChannel`:$targetCommit"
 
         if ($targetKey -eq $currentKey) {
-          Write-Host "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker up_to_date key=$currentKey"
+          Write-CodedPublicDebugV54K "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker up_to_date key=$currentKey"
           continue
         }
 
@@ -927,14 +933,14 @@ function Start-CodedWindowsChannelAutoupdateV53B {
 
         $age = $now - $lastTs
         if ($lastKey -eq $targetKey -and $age -lt 900) {
-          Write-Host "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker update_already_requested local=$currentKey target=$targetKey age_sec=$age"
+          Write-CodedPublicDebugV54K "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker update_already_requested local=$currentKey target=$targetKey age_sec=$age"
           continue
         }
 
         "$targetKey $now" | Set-Content -Path $Last -Encoding ASCII
         "update_needed local=$currentKey target=$targetKey version=$targetVersion" | Set-Content -Path $Flag -Encoding ASCII
 
-        Write-Host "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker update_needed local=$currentKey target=$targetKey version=$targetVersion action=stop_miner"
+        Write-CodedPublicDebugV54K "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker update_needed local=$currentKey target=$targetKey version=$targetVersion action=stop_miner"
 
         Get-Process -ErrorAction SilentlyContinue | Where-Object {
           $_.Path -and ($_.Path -eq $ExePath)
@@ -942,7 +948,7 @@ function Start-CodedWindowsChannelAutoupdateV53B {
 
         break
       } catch {
-        Write-Host "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE_ERROR worker=$Worker error=$($_.Exception.Message)"
+        Write-CodedPublicDebugV54K "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE_ERROR worker=$Worker error=$($_.Exception.Message)"
       }
     }
   } -ArgumentList $Root, $CurrentChannel, $CurrentCommit, $ExePath, $Worker, $sec, $flag, $last, $BetaRequested | Out-Null
@@ -1190,11 +1196,11 @@ function Stop-CodedWindowsDuplicateRunnersV54D {
       $_.CommandLine -notmatch "coded-windows-analytics\.ps1" -and
       ($escapedWorker -eq "" -or $_.CommandLine -match $escapedWorker)
     } | ForEach-Object {
-      Write-Host "[PUBLIC] M1091V54D stopping duplicate CODED runner pid=$($_.ProcessId)"
+      Write-CodedPublicDebugV54K "[PUBLIC] M1091V54D stopping duplicate CODED runner pid=$($_.ProcessId)"
       Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }
   } catch {
-    Write-Host "[PUBLIC] M1091V54D duplicate runner cleanup skipped: $($_.Exception.Message)"
+    Write-CodedPublicDebugV54K "[PUBLIC] M1091V54D duplicate runner cleanup skipped: $($_.Exception.Message)"
   }
 }
 
@@ -1214,11 +1220,11 @@ function Stop-CodedWindowsStaleAnalyticsV54C {
       $_.CommandLine -match "coded-windows-analytics\.ps1" -and
       ($escapedWorker -eq "" -or $_.CommandLine -match $escapedWorker)
     } | ForEach-Object {
-      Write-Host "[PUBLIC] M1091V54C stopping stale analytics process pid=$($_.ProcessId)"
+      Write-CodedPublicDebugV54K "[PUBLIC] M1091V54C stopping stale analytics process pid=$($_.ProcessId)"
       Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
     }
   } catch {
-    Write-Host "[PUBLIC] M1091V54C stale analytics cleanup skipped: $($_.Exception.Message)"
+    Write-CodedPublicDebugV54K "[PUBLIC] M1091V54C stale analytics cleanup skipped: $($_.Exception.Message)"
   }
 }
 
@@ -1266,7 +1272,7 @@ try {
     if ($self -and (Test-Path $self)) {
         # M1091V54J: Windows PowerShell 5 / Windows 8 can mis-bind array
         # splatting into script params here. Call the script explicitly instead.
-        Write-Host "[PUBLIC] M1091V54J re-entering runner in same PowerShell process..."
+        Write-Host "CODED update applied. Restarting miner..."
 
         if ($script:CodedBetaRequested) {
           & $self -Wallet $Wallet -Worker $Worker -Pool $Pool -Backend $Backend -Threads $Threads -Beta

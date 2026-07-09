@@ -6,6 +6,19 @@
 
 # M1091V53A_CHANNEL_SAFE_PUBLIC_RESTART
 # M1091V54B_PUBLIC_RUNNER_RESTART_AND_MAC_ARM_NEON_LABEL
+# M1091V54K_PUBLIC_COSMETIC_AUTOUPDATE_TRANSITION
+# Public default: keep update transitions clean. Set CODED_PUBLIC_DEBUG=1 for dev logs.
+CODED_PUBLIC_DEBUG="${CODED_PUBLIC_DEBUG:-0}"
+set +m 2>/dev/null || true
+set +b 2>/dev/null || true
+coded_m1091v54k_debug() {
+  if [ "${CODED_PUBLIC_DEBUG:-0}" = "1" ]; then
+    printf '%s\n' "$*"
+  fi
+}
+coded_m1091v54k_public_restart_loader() {
+  coded_ui_loader 75 "Applying update"
+}
 coded_m1091v53a_preserve_restart_env() {
   export WALLET="${WALLET:-${CODED_WALLET:-}}"
   export WORKER="${WORKER_SAFE:-${WORKER:-${CODED_WORKER:-${CODED_WORKER_NAME:-}}}}"
@@ -84,9 +97,9 @@ coded_m1091v51c_effective_download_url() {
 
 coded_m1091v51c_print_effective_status() {
   if [ "${CODED_RELEASE_CHANNEL:-latest}" = "beta" ]; then
-    echo "Status: beta | release_channel=beta | commit=${CODED_RELEASE_COMMIT:-unknown} | version=${CODED_RELEASE_VERSION:-unknown}"
+    coded_m1091v54k_debug "Status: beta | release_channel=beta | commit=${CODED_RELEASE_COMMIT:-unknown} | version=${CODED_RELEASE_VERSION:-unknown}"
   else
-    echo "Status: latest | release_channel=latest"
+    coded_m1091v54k_debug "Status: latest | release_channel=latest"
   fi
 }
 # M1091V51B_MACOS_BETA_PUBLIC_CONSOLE_FLOW
@@ -135,9 +148,9 @@ coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
       : > "$run_log" 2>/dev/null || run_log="/tmp/coded-miner-beta-${worker}.log"
       : > "$run_log" 2>/dev/null || true
 
-      echo "[M1091V51B] starting macOS beta public console flow worker=$worker commit=${CODED_RELEASE_COMMIT:-unknown}"
-      echo "[M1091V51B] beta bin=$bin"
-      echo "[M1091V51B] beta log=$run_log"
+      coded_m1091v54k_debug "[M1091V51B] starting macOS beta public console flow worker=$worker commit=${CODED_RELEASE_COMMIT:-unknown}"
+      coded_m1091v54k_debug "[M1091V51B] beta bin=$bin"
+      coded_m1091v54k_debug "[M1091V51B] beta log=$run_log"
 
       "$bin" > "$run_log" 2>&1 &
       miner_pid="$!"
@@ -146,7 +159,7 @@ coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
         exec python3 "$console" "$run_log" "$miner_pid"
       fi
 
-      echo "[M1091V51B] console missing; tailing beta miner log"
+      coded_m1091v54k_debug "[M1091V51B] console missing; tailing beta miner log"
       exec tail -f "$run_log"
     fi
   done
@@ -179,14 +192,14 @@ coded_m1091v50v_exec_macos_beta_binary_if_present() {
     "$root/pkg/coded-miner/coded-miner"
   do
     if [ -x "$entry" ]; then
-      echo "[M1091V50V] starting macOS beta binary entry=$entry"
+      coded_m1091v54k_debug "[M1091V50V] starting macOS beta binary entry=$entry"
       exec "$entry"
     fi
   done
 
   entry="$(find "$root" -maxdepth 4 -type f -name coded-miner -perm -111 2>/dev/null | head -1 || true)"
   if [ -n "$entry" ] && [ -x "$entry" ]; then
-    echo "[M1091V50V] starting discovered macOS beta binary entry=$entry"
+    coded_m1091v54k_debug "[M1091V50V] starting discovered macOS beta binary entry=$entry"
     exec "$entry"
   fi
 
@@ -278,8 +291,8 @@ coded_m1091v50h_try_beta() {
 
 
 beta_asset_name="$(coded_m1091v50v_beta_asset_name)"
-echo "[M1091V50V] beta asset=$beta_asset_name"
-  echo "[M1091V50H] beta requested in public run.sh"
+coded_m1091v54k_debug "[M1091V50V] beta asset=$beta_asset_name"
+  coded_m1091v54k_debug "[M1091V50H] beta requested in public run.sh"
 
   pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
   channel_url="${CODED_RELEASE_CHANNEL_STATUS_URL:-${pool%/}/admin/release/channel-status}"
@@ -291,7 +304,7 @@ echo "[M1091V50V] beta asset=$beta_asset_name"
   status_json="$tmp_root/channel-status.json"
 
   if ! curl -fsSL --max-time 15 "$channel_url" -o "$status_json"; then
-    echo "[M1091V50H] beta channel-status unavailable; falling back to public latest"
+    coded_m1091v54k_debug "[M1091V50H] beta channel-status unavailable; falling back to public latest"
     return 1
   fi
 
@@ -300,12 +313,12 @@ echo "[M1091V50V] beta asset=$beta_asset_name"
   beta_asset_ok="$(coded_m1091v50h_json_field "$status_json" beta.assets.linux.ok || true)"
 
   if [ -z "$beta_version" ] || [ "$beta_version" = "null" ]; then
-    echo "[M1091V50H] no active beta version; falling back to public latest"
+    coded_m1091v54k_debug "[M1091V50H] no active beta version; falling back to public latest"
     return 1
   fi
 
   if [ "$beta_asset_ok" = "false" ]; then
-    echo "[M1091V50H] beta linux asset not ok; falling back to public latest"
+    coded_m1091v54k_debug "[M1091V50H] beta linux asset not ok; falling back to public latest"
     return 1
   fi
 
@@ -322,11 +335,11 @@ echo "[M1091V50V] beta asset=$beta_asset_name"
   export CODED_RELEASE_DOWNLOAD_URL="$beta_url"
   export CODED_BETA_SELECTED_NORMAL_FLOW="1"
 
-  echo "[M1091V51C] beta selected as effective release"
-  echo "[M1091V51C] beta asset=${CODED_RELEASE_ASSET_NAME}"
-  echo "[M1091V51C] beta url=${CODED_RELEASE_DOWNLOAD_URL}"
-  echo "[M1091V51C] continuing through normal public runner autoupdate/log flow"
-  echo "Status: beta | release_channel=beta | commit=${CODED_RELEASE_COMMIT} | version=${CODED_RELEASE_VERSION}"
+  coded_m1091v54k_debug "[M1091V51C] beta selected as effective release"
+  coded_m1091v54k_debug "[M1091V51C] beta asset=${CODED_RELEASE_ASSET_NAME}"
+  coded_m1091v54k_debug "[M1091V51C] beta url=${CODED_RELEASE_DOWNLOAD_URL}"
+  coded_m1091v54k_debug "[M1091V51C] continuing through normal public runner autoupdate/log flow"
+  coded_m1091v54k_debug "Status: beta | release_channel=beta | commit=${CODED_RELEASE_COMMIT} | version=${CODED_RELEASE_VERSION}"
 
   # Return non-zero intentionally: caller uses `try_beta || true`,
   # so normal public runner continues with CODED_RELEASE_DOWNLOAD_URL override.
@@ -347,7 +360,7 @@ if coded_m1091v50h_beta_requested "$@"; then
       export CODED_RELEASE_STATUS="latest"
       export CODED_RELEASE_CHANNEL="latest"
       unset CODED_RELEASE_DOWNLOAD_URL CODED_RELEASE_ASSET_NAME CODED_BETA_SELECTED_NORMAL_FLOW
-      echo "Status: latest | release_channel=latest | beta_fallback=1"
+      coded_m1091v54k_debug "Status: latest | release_channel=latest | beta_fallback=1"
     fi
   }
 else
@@ -917,7 +930,7 @@ coded_public_autoupdate_start() {
 
   old_update_pid="$(cat "$PID_DIR/autoupdate.pid" 2>/dev/null || true)"
   if [ -n "$old_update_pid" ] && kill -0 "$old_update_pid" 2>/dev/null; then
-    echo "[M1091V51Q] stopping old autoupdate pid=$old_update_pid"
+    coded_m1091v54k_debug "[M1091V51Q] stopping old autoupdate pid=$old_update_pid"
     kill "$old_update_pid" 2>/dev/null || true
     sleep 1
     kill -9 "$old_update_pid" 2>/dev/null || true
@@ -958,7 +971,7 @@ EOF_M1091V51P
       new_key="${effective_channel}:${effective_commit:-unknown}"
 
       if [ "$new_key" = "$cur_key" ] && [ -n "$cur_commit" ] && [ "$effective_commit" = "$cur_commit" ]; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] already_latest commit=$cur_commit key=$cur_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        coded_m1091v54k_debug "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] already_latest commit=$cur_commit key=$cur_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
         continue
       fi
 
@@ -977,13 +990,13 @@ EOF_M1091V51P
       done
 
       if [ "$DOWNLOAD_OK" != "1" ]; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] download_failed keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        coded_m1091v54k_debug "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] download_failed keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
         rm -rf "$tmp_dir"
         continue
       fi
 
       if ! tar -xzf "$tar_file" -C "$tmp_dir" 2>>"$log_file"; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] extract_failed keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        coded_m1091v54k_debug "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] extract_failed keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
         rm -rf "$tmp_dir"
         continue
       fi
@@ -996,7 +1009,7 @@ EOF_M1091V51P
       new_commit="$(coded_manifest_commit "$root" | head -1)"
 
       if [ -z "$new_commit" ]; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] new_commit_missing keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        coded_m1091v54k_debug "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] new_commit_missing keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
         rm -rf "$tmp_dir"
         continue
       fi
@@ -1005,12 +1018,12 @@ EOF_M1091V51P
       new_key="${effective_channel}:${new_commit}"
 
       if [ "$new_key" = "$cur_key" ] && [ "$new_commit" = "$cur_commit" ]; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] already_latest commit=$new_commit key=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        coded_m1091v54k_debug "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] already_latest commit=$new_commit key=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
         rm -rf "$tmp_dir"
         continue
       fi
 
-      echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] update_available old=${cur_commit:-missing} new=$new_commit old_key=${cur_key:-missing} new_key=${new_key:-missing} restarting at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+      coded_m1091v54k_debug "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] update_available old=${cur_commit:-missing} new=$new_commit old_key=${cur_key:-missing} new_key=${new_key:-missing} restarting at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
 
       rm -rf "$INSTALL_DIR.next" "$INSTALL_DIR.prev"
       mkdir -p "$INSTALL_DIR.next"
@@ -1187,9 +1200,9 @@ coded_m1091v51r_restart_if_required() {
   reason="$(cat "$STATE_DIR/restart.required" 2>/dev/null || true)"
   rm -f "$STATE_DIR/restart.required" 2>/dev/null || true
 
-  echo "[M1091V51R] restart.required detected reason=${reason:-autoupdate}"
+  coded_m1091v54k_debug "[M1091V51R] restart.required detected reason=${reason:-autoupdate}"
 
-  coded_ui_loader 75 "Preparing restart"
+  coded_m1091v54k_public_restart_loader
   coded_m1091v53a_exec_fresh_runsh
 }
 
@@ -1201,9 +1214,9 @@ coded_m1091v51s_exec_restart() {
   reason="$(cat "$STATE_DIR/restart.required" 2>/dev/null || true)"
   rm -f "$STATE_DIR/restart.required" 2>/dev/null || true
 
-  echo "[M1091V51S] parent restart signal received reason=${reason:-autoupdate}"
+  coded_m1091v54k_debug "[M1091V51S] parent restart signal received reason=${reason:-autoupdate}"
 
-  coded_ui_loader 75 "Preparing restart"
+  coded_m1091v54k_public_restart_loader
   coded_m1091v53a_exec_fresh_runsh
 }
 
@@ -1214,7 +1227,7 @@ coded_m1091v51s_start_restart_watcher() {
 
   old_watch_pid="$(cat "$PID_DIR/restart-watch.pid" 2>/dev/null || true)"
   if [ -n "$old_watch_pid" ] && kill -0 "$old_watch_pid" 2>/dev/null; then
-    echo "[M1091V51S] stopping old restart watcher pid=$old_watch_pid"
+    coded_m1091v54k_debug "[M1091V51S] stopping old restart watcher pid=$old_watch_pid"
     kill "$old_watch_pid" 2>/dev/null || true
     sleep 1
     kill -9 "$old_watch_pid" 2>/dev/null || true
@@ -1290,7 +1303,7 @@ if [ -s "$PID_DIR/update.request" ]; then
   sleep 1
   coded_ui_loader 45 "Downloading latest CODED MINER"
   sleep 1
-  coded_ui_loader 75 "Preparing restart"
+  coded_m1091v54k_public_restart_loader
   sleep 1
   coded_ui_loader 100 "Restarting neural network training"
   coded_ui_loader_finish
@@ -1303,8 +1316,8 @@ fi
 # back to the shell. Re-enter the public runner once and let channel-status
 # choose beta/latest.
 if [ "${CONSOLE_RC:-0}" = "143" ]; then
-  echo "[M1091V54B] console exited by SIGTERM; attempting channel-safe runner restart"
-  coded_ui_loader 75 "Preparing restart"
+  coded_m1091v54k_debug "[M1091V54B] console exited by SIGTERM; attempting channel-safe runner restart"
+  coded_m1091v54k_public_restart_loader
   coded_m1091v53a_exec_fresh_runsh
 fi
 
