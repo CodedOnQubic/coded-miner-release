@@ -26,6 +26,7 @@ param(
 # M1091V54B_PUBLIC_RUNNER_RESTART_AND_MAC_ARM_NEON_LABEL
 # M1091V54C_WINDOWS_SINGLE_SESSION_RESTART_CLEANUP
 # M1091V54D_WINDOWS_CLEAN_SINGLE_RUNNER
+# M1091V54J_WINDOWS_REENTER_WITHOUT_ARRAY_SPLATTING
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -1263,20 +1264,17 @@ try {
     if (-not $self) { $self = $MyInvocation.MyCommand.Path }
 
     if ($self -and (Test-Path $self)) {
-        $runnerArgs = @(
-          "-Wallet",$Wallet,
-          "-Worker",$Worker,
-          "-Pool",$Pool,
-          "-Backend",$Backend,
-          "-Threads","$Threads"
-        )
-        if ($script:CodedBetaRequested) { $runnerArgs += "-Beta" }
+        # M1091V54J: Windows PowerShell 5 / Windows 8 can mis-bind array
+        # splatting into script params here. Call the script explicitly instead.
+        Write-Host "[PUBLIC] M1091V54J re-entering runner in same PowerShell process..."
 
-        # M1091V54D: re-enter run.ps1 in the same PowerShell process.
-        # This prevents a new visible PowerShell window and avoids nested runner piles.
-        Write-Host "[PUBLIC] M1091V54D re-entering runner in same PowerShell process..."
-        & $self @runnerArgs
-        exit $LASTEXITCODE
+        if ($script:CodedBetaRequested) {
+          & $self -Wallet $Wallet -Worker $Worker -Pool $Pool -Backend $Backend -Threads $Threads -Beta
+          exit $LASTEXITCODE
+        } else {
+          & $self -Wallet $Wallet -Worker $Worker -Pool $Pool -Backend $Backend -Threads $Threads
+          exit $LASTEXITCODE
+        }
     }
   }
 
