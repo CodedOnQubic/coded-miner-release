@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # M1091V51N_FINAL_SAFE_PUBLIC_BETA_AUTOUPDATE_COMPAT
+# M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
 # M1091V51C_BETA_AS_EFFECTIVE_RELEASE_NORMAL_PUBLIC_FLOW
 coded_m1091v51c_effective_download_url() {
   local default_url
@@ -257,6 +258,8 @@ echo "[M1091V50V] beta asset=$beta_asset_name"
 # M1091V50I2_RUN_SH_STATUS_WRAPPER
 # M1091V51N_FINAL_SAFE_PUBLIC_BETA_AUTOUPDATE_COMPAT
 if coded_m1091v50h_beta_requested "$@"; then
+  export CODED_BETA_REQUESTED="1"
+  export CODED_BETA="${CODED_BETA:-yes}"
   coded_m1091v50h_try_beta "$@" || {
     if [ "${CODED_BETA_SELECTED_NORMAL_FLOW:-0}" = "1" ]; then
       export CODED_RELEASE_STATUS="beta"
@@ -269,6 +272,7 @@ if coded_m1091v50h_beta_requested "$@"; then
     fi
   }
 else
+  export CODED_BETA_REQUESTED="${CODED_BETA_REQUESTED:-0}"
   export CODED_RELEASE_STATUS="latest"
   export CODED_RELEASE_CHANNEL="latest"
   coded_m1091v51c_print_effective_status
@@ -716,81 +720,223 @@ coded_manifest_commit() {
   done
 }
 
-coded_public_autoupdate_start() {
-  case "${CODED_DISABLE_PUBLIC_AUTOUPDATE:-0}" in
-    1|YES|yes|true|TRUE)
-      return 0
-    ;;
+coded_m1091v51p_platform_asset_name() {
+  local channel="${1:-latest}"
+  case "${PLATFORM:-}" in
+    macos-arm64)
+      if [ "$channel" = "beta" ]; then
+        printf '%s\n' "coded-miner-macos-arm64-beta-latest.tar.gz"
+      else
+        printf '%s\n' "coded-miner-macos-arm64-latest.tar.gz"
+      fi
+      ;;
+    windows*|win*)
+      if [ "$channel" = "beta" ]; then
+        printf '%s\n' "coded-miner-windows-amd64-beta-latest.tar.gz"
+      else
+        printf '%s\n' "coded-miner-windows-amd64-latest.tar.gz"
+      fi
+      ;;
+    *)
+      if [ "$channel" = "beta" ]; then
+        printf '%s\n' "coded-miner-beta-latest.tar.gz"
+      else
+        printf '%s\n' "coded-miner-latest.tar.gz"
+      fi
+      ;;
+  esac
+}
+
+coded_m1091v51p_effective_release_line() {
+  local pool status_json wants_beta
+
+  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
+  wants_beta=0
+
+  case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in
+    1|yes|YES|true|TRUE|beta|BETA) wants_beta=1 ;;
   esac
 
-  command -v curl >/dev/null 2>&1 || return 0
-  command -v tar >/dev/null 2>&1 || return 0
+  status_json="$(curl -fsSL --connect-timeout 5 --max-time 15 "${pool%/}/admin/release/channel-status" 2>/dev/null || true)"
+
+  if [ -z "$status_json" ]; then
+    printf '%s|%s|%s|%s|%s\n' \
+      "${CODED_RELEASE_CHANNEL:-latest}" \
+      "${CODED_RELEASE_VERSION:-${RELEASE_VERSION:-}}" \
+      "${CODED_RELEASE_COMMIT:-${GIT_COMMIT:-}}" \
+      "${CODED_RELEASE_ASSET_NAME:-}" \
+      "${CODED_RELEASE_DOWNLOAD_URL:-${ASSET_URL:-}}"
+    return 0
+  fi
+
+  STATUS_JSON="$status_json" python3 -c '
+import json, os, sys
+
+wants_beta = sys.argv[1] == "1"
+platform = sys.argv[2] or ""
+repo = "https://github.com/CodedOnQubic/coded-miner-release/releases"
+
+try:
+    d = json.loads(os.environ.get("STATUS_JSON") or "{}")
+except Exception:
+    d = {}
+
+latest = d.get("public_latest") or {}
+beta = d.get("beta") or {}
+
+def asset_for(channel):
+    if platform == "macos-arm64":
+        return "coded-miner-macos-arm64-beta-latest.tar.gz" if channel == "beta" else "coded-miner-macos-arm64-latest.tar.gz"
+    if platform.startswith("windows") or platform.startswith("win"):
+        return "coded-miner-windows-amd64-beta-latest.tar.gz" if channel == "beta" else "coded-miner-windows-amd64-latest.tar.gz"
+    return "coded-miner-beta-latest.tar.gz" if channel == "beta" else "coded-miner-latest.tar.gz"
+
+if wants_beta and beta.get("version") and beta.get("commit"):
+    channel = "beta"
+    version = str(beta.get("version") or "")
+    commit = str(beta.get("commit") or "")
+    asset = asset_for(channel)
+    url = repo + "/download/" + version + "/" + asset
+    print("|".join([channel, version, commit, asset, url]))
+    sys.exit(0)
+
+channel = "latest"
+version = str(latest.get("version") or "")
+commit = str(latest.get("commit") or "")
+asset = asset_for(channel)
+url = repo + "/download/" + version + "/" + asset if version else repo + "/latest/download/" + asset
+print("|".join([channel, version, commit, asset, url]))
+' "$wants_beta" "${PLATFORM:-}"
+}
+
+coded_m1091v51p_kill_current_public_children() {
+  local pid pf
+
+  for pf in "$PID_DIR/miner.pid" "$PID_DIR/analytics.pid"; do
+    [ -f "$pf" ] || continue
+    pid="$(cat "$pf" 2>/dev/null || true)"
+    [ -n "$pid" ] || continue
+    kill "$pid" 2>/dev/null || true
+  done
+
+  sleep 1
+
+  for pf in "$PID_DIR/miner.pid" "$PID_DIR/analytics.pid"; do
+    [ -f "$pf" ] || continue
+    pid="$(cat "$pf" 2>/dev/null || true)"
+    [ -n "$pid" ] || continue
+    kill -9 "$pid" 2>/dev/null || true
+  done
+}
+
+coded_public_autoupdate_start() {
+  # M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
+  case "${CODED_DISABLE_PUBLIC_AUTOUPDATE:-0}" in
+    1|yes|YES|true|TRUE) return 0 ;;
+  esac
 
   (
     log_file="$LOG_DIR/public-autoupdate.log"
+    key_file="$STATE_DIR/release.key"
 
     while true; do
       sleep "$CODED_PUBLIC_UPDATE_SEC"
 
       cur_commit="$(coded_manifest_commit "$INSTALL_DIR" | head -1)"
-      work="$STATE_DIR/update-check.$$.$RANDOM"
-      tar_file="$work/latest.tar.gz"
-      extract="$work/extract"
+      cur_channel="${CODED_RELEASE_CHANNEL:-latest}"
+      cur_key="$(cat "$key_file" 2>/dev/null || true)"
+      [ -n "$cur_key" ] || cur_key="${cur_channel}:${cur_commit:-unknown}"
 
-      rm -rf "$work"
-      mkdir -p "$extract" 2>/dev/null || true
+      effective_line="$(coded_m1091v51p_effective_release_line || true)"
+      IFS='|' read -r effective_channel effective_version effective_commit effective_asset effective_url <<EOF_M1091V51P
+$effective_line
+EOF_M1091V51P
 
-      download_ok=0
-      for u in ${ASSET_URLS:-$ASSET_URL}; do
+      [ -n "$effective_channel" ] || effective_channel="${CODED_RELEASE_CHANNEL:-latest}"
+      [ -n "$effective_commit" ] || effective_commit="${CODED_RELEASE_COMMIT:-$cur_commit}"
+      [ -n "$effective_asset" ] || effective_asset="$(coded_m1091v51p_platform_asset_name "$effective_channel")"
+
+      new_key="${effective_channel}:${effective_commit:-unknown}"
+
+      if [ "$new_key" = "$cur_key" ] && [ -n "$cur_commit" ] && [ "$effective_commit" = "$cur_commit" ]; then
+        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] already_latest commit=$cur_commit key=$cur_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        continue
+      fi
+
+      tmp_dir="$STATE_DIR/autoupdate.$$"
+      tar_file="$STATE_DIR/autoupdate.tar.gz"
+      rm -rf "$tmp_dir"
+      mkdir -p "$tmp_dir"
+
+      DOWNLOAD_OK=0
+      for u in ${effective_url:-} ${CODED_RELEASE_DOWNLOAD_URL:-} ${ASSET_URLS:-$ASSET_URL}; do
+        [ -n "$u" ] || continue
         if curl -fsSL --retry 2 "$u" -o "$tar_file" 2>>"$log_file"; then
-          download_ok=1
+          DOWNLOAD_OK=1
           break
         fi
       done
 
-      if [ "$download_ok" != "1" ]; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] download_failed keep_current at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
-        rm -rf "$work"
+      if [ "$DOWNLOAD_OK" != "1" ]; then
+        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] download_failed keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        rm -rf "$tmp_dir"
         continue
       fi
 
-      if ! tar -xzf "$tar_file" -C "$extract" >> "$log_file" 2>&1; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] extract_failed keep_current at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
-        rm -rf "$work"
+      if ! tar -xzf "$tar_file" -C "$tmp_dir" 2>>"$log_file"; then
+        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] extract_failed keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        rm -rf "$tmp_dir"
         continue
       fi
 
-      root="$extract"
-      [ -d "$extract/coded-miner" ] && root="$extract/coded-miner"
+      root="$tmp_dir"
+      if [ -d "$tmp_dir/coded-miner" ]; then
+        root="$tmp_dir/coded-miner"
+      fi
 
       new_commit="$(coded_manifest_commit "$root" | head -1)"
 
       if [ -z "$new_commit" ]; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] new_commit_missing keep_current cur=$cur_commit at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
-        rm -rf "$work"
+        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] new_commit_missing keep_current cur=$cur_commit key=$cur_key target=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        rm -rf "$tmp_dir"
         continue
       fi
 
-      if [ -n "$cur_commit" ] && [ "$new_commit" = "$cur_commit" ]; then
-        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] already_latest commit=$new_commit at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
-        rm -rf "$work"
+      # Trust manifest commit over channel-status if asset resolves correctly.
+      new_key="${effective_channel}:${new_commit}"
+
+      if [ "$new_key" = "$cur_key" ] && [ "$new_commit" = "$cur_commit" ]; then
+        echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] already_latest commit=$new_commit key=$new_key at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+        rm -rf "$tmp_dir"
         continue
       fi
 
-      echo "$new_commit" > "$PID_DIR/update.request"
-      echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] update_available old=${cur_commit:-missing} new=$new_commit restarting at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
+      echo "[M1091V33A_PUBLIC_RUNSH_AUTOUPDATE_300S] update_available old=${cur_commit:-missing} new=$new_commit old_key=${cur_key:-missing} new_key=${new_key:-missing} restarting at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$log_file"
 
-      kill "$MINER_PID" 2>/dev/null || true
-      kill "$ANALYTICS_PID" 2>/dev/null || true
+      rm -rf "$INSTALL_DIR.next" "$INSTALL_DIR.prev"
+      mkdir -p "$INSTALL_DIR.next"
+      cp -R "$root"/. "$INSTALL_DIR.next"/
+      chmod +x "$INSTALL_DIR.next"/* 2>/dev/null || true
 
-      rm -rf "$work"
-      exit 0
+      if [ -d "$INSTALL_DIR" ]; then
+        mv "$INSTALL_DIR" "$INSTALL_DIR.prev" 2>/dev/null || rm -rf "$INSTALL_DIR"
+      fi
+      mv "$INSTALL_DIR.next" "$INSTALL_DIR"
+
+      printf '%s\n' "$new_key" > "$key_file" 2>/dev/null || true
+      touch "$STATE_DIR/restart.required" 2>/dev/null || true
+
+      rm -rf "$tmp_dir"
+
+      coded_m1091v51p_kill_current_public_children || true
+      break
     done
   ) &
 
   UPDATE_PID="$!"
   echo "$UPDATE_PID" > "$PID_DIR/autoupdate.pid" 2>/dev/null || true
 }
+
 
 pick_exe() {
   case "$BACKEND" in
@@ -962,6 +1108,7 @@ if [ -s "$PID_DIR/update.request" ]; then
   export POOL="$POOL"
   export API_ROOT="$API_ROOT"
   export CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
+  export CODED_BETA_REQUESTED="${CODED_BETA_REQUESTED:-0}"
   export CODED_PUBLIC_BRAND_EVERY="${CODED_PUBLIC_BRAND_EVERY:-9}"
   export CODED_PUBLIC_LINE_SEC="${CODED_PUBLIC_LINE_SEC:-1}"
   export CODED_PUBLIC_BOOT_STATUS="Updating CODED MINER"
