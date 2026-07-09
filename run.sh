@@ -7,6 +7,7 @@
 # M1091V53A_CHANNEL_SAFE_PUBLIC_RESTART
 # M1091V54B_PUBLIC_RUNNER_RESTART_AND_MAC_ARM_NEON_LABEL
 # M1091V54K_PUBLIC_COSMETIC_AUTOUPDATE_TRANSITION
+# M1091V55B_PARENT_OWNED_QUIET_PUBLIC_RESTART
 # Public default: keep update transitions clean. Set CODED_PUBLIC_DEBUG=1 for dev logs.
 CODED_PUBLIC_DEBUG="${CODED_PUBLIC_DEBUG:-0}"
 set +m 2>/dev/null || true
@@ -921,6 +922,36 @@ coded_m1091v51p_kill_current_public_children() {
   done
 }
 
+coded_m1091v55b_quiet_stop_public_children() {
+  # M1091V55B: parent-owned child shutdown. This avoids interactive shell
+  # "Terminated: 15 env ..." job notices during public autoupdate transitions.
+  local pid seen pids
+
+  pids=""
+  for pid in "${MINER_PID:-}" "${ANALYTICS_PID:-}" "$(cat "$PID_DIR/miner.pid" 2>/dev/null || true)" "$(cat "$PID_DIR/analytics.pid" 2>/dev/null || true)"; do
+    [ -n "$pid" ] || continue
+    seen=0
+    for p in $pids; do [ "$p" = "$pid" ] && seen=1; done
+    [ "$seen" = "1" ] && continue
+    pids="$pids $pid"
+  done
+
+  for pid in $pids; do
+    kill "$pid" 2>/dev/null || true
+  done
+
+  sleep 1
+
+  for pid in $pids; do
+    kill -0 "$pid" 2>/dev/null || continue
+    kill -9 "$pid" 2>/dev/null || true
+  done
+
+  for pid in $pids; do
+    wait "$pid" 2>/dev/null || true
+  done
+}
+
 coded_public_autoupdate_start() {
   # M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
   # M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
@@ -1037,10 +1068,13 @@ EOF_M1091V51P
 
       printf '%s\n' "$new_key" > "$key_file" 2>/dev/null || true
       touch "$STATE_DIR/restart.required" 2>/dev/null || true
+      printf '%s\n' "$new_key" > "$PID_DIR/update.request" 2>/dev/null || true
 
       rm -rf "$tmp_dir"
 
-      coded_m1091v51p_kill_current_public_children || true
+      # M1091V55B: do not kill child processes from the background updater.
+      # The parent runner notices update.request/restart.required, shows the
+      # public loader, stops children quietly, and then execs the fresh runner.
       break
     done
   ) &
@@ -1203,6 +1237,7 @@ coded_m1091v51r_restart_if_required() {
   coded_m1091v54k_debug "[M1091V51R] restart.required detected reason=${reason:-autoupdate}"
 
   coded_m1091v54k_public_restart_loader
+  coded_m1091v55b_quiet_stop_public_children
   coded_m1091v53a_exec_fresh_runsh
 }
 
@@ -1217,6 +1252,7 @@ coded_m1091v51s_exec_restart() {
   coded_m1091v54k_debug "[M1091V51S] parent restart signal received reason=${reason:-autoupdate}"
 
   coded_m1091v54k_public_restart_loader
+  coded_m1091v55b_quiet_stop_public_children
   coded_m1091v53a_exec_fresh_runsh
 }
 
@@ -1267,7 +1303,28 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$INSTALL_DIR/coded-public-console
   CODED_PLATFORM="$PLATFORM" \
   CODED_PUBLIC_BRAND_EVERY="${CODED_PUBLIC_BRAND_EVERY:-9}" \
   CODED_PUBLIC_LINE_SEC="${CODED_PUBLIC_LINE_SEC:-1}" \
-  python3 "$INSTALL_DIR/coded-public-console.py" "$RUN_LOG" "$MINER_PID" || CONSOLE_RC="$?"
+  python3 "$INSTALL_DIR/coded-public-console.py" "$RUN_LOG" "$MINER_PID" &
+  CONSOLE_PID="$!"
+
+  while kill -0 "$CONSOLE_PID" 2>/dev/null; do
+    if [ -f "$STATE_DIR/restart.required" ] || [ -s "$PID_DIR/update.request" ]; then
+      rm -f "$STATE_DIR/restart.required" "$PID_DIR/update.request" 2>/dev/null || true
+
+      coded_m1091v54k_public_restart_loader
+      coded_m1091v55b_quiet_stop_public_children
+
+      if [ -n "${UPDATE_PID:-}" ]; then
+        kill "$UPDATE_PID" 2>/dev/null || true
+        wait "$UPDATE_PID" 2>/dev/null || true
+      fi
+
+      coded_m1091v53a_exec_fresh_runsh
+    fi
+    sleep 1
+  done
+
+  wait "$CONSOLE_PID" 2>/dev/null
+  CONSOLE_RC="$?"
 else
   echo "ERROR: coded-public-console.py unavailable. Raw dev analytics will not be shown."
   echo "RUN_LOG is still available internally at: $RUN_LOG"
@@ -1318,6 +1375,7 @@ fi
 if [ "${CONSOLE_RC:-0}" = "143" ]; then
   coded_m1091v54k_debug "[M1091V54B] console exited by SIGTERM; attempting channel-safe runner restart"
   coded_m1091v54k_public_restart_loader
+  coded_m1091v55b_quiet_stop_public_children
   coded_m1091v53a_exec_fresh_runsh
 fi
 

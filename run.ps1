@@ -27,6 +27,7 @@ param(
 # M1091V54C_WINDOWS_SINGLE_SESSION_RESTART_CLEANUP
 # M1091V54D_WINDOWS_CLEAN_SINGLE_RUNNER
 # M1091V54J_WINDOWS_REENTER_WITHOUT_ARRAY_SPLATTING
+# M1091V55C_WINDOWS_JOB_SCOPE_DEBUG_HELPER_ROBUST
 # M1091V54K_PUBLIC_COSMETIC_AUTOUPDATE_TRANSITION
 function Write-CodedPublicDebugV54K([string]$Message) {
   if ($env:CODED_PUBLIC_DEBUG -eq "1") {
@@ -734,6 +735,11 @@ function Start-CodedWindowsSafeAutoupdate {
   Start-Job -Name ("coded-win-autoupdate-" + $Worker) -ScriptBlock {
     param($Root, $CurrentCommit, $ExePath, $Worker, $Sec, $Flag, $Last)
 
+      function Write-CodedPublicDebugV54K([string]$Message) {
+        if ($env:CODED_PUBLIC_DEBUG -eq "1") {
+          Write-Host $Message
+        }
+      }
     while ($true) {
       Start-Sleep -Seconds $Sec
 
@@ -827,6 +833,11 @@ function Start-CodedWindowsChannelAutoupdateV53B {
   Start-Job -Name ("coded-win-channel-autoupdate-" + $Worker) -ScriptBlock {
     param($Root, $CurrentChannel, $CurrentCommit, $ExePath, $Worker, $Sec, $Flag, $Last, $BetaRequested)
 
+      function Write-CodedPublicDebugV54K([string]$Message) {
+        if ($env:CODED_PUBLIC_DEBUG -eq "1") {
+          Write-Host $Message
+        }
+      }
     function Enable-CodedTlsJobV53B {
       try { [Net.ServicePointManager]::SecurityProtocol = 3072 } catch {}
     }
