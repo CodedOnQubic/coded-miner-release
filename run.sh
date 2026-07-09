@@ -8,6 +8,32 @@
 # M1091V54B_PUBLIC_RUNNER_RESTART_AND_MAC_ARM_NEON_LABEL
 # M1091V54K_PUBLIC_COSMETIC_AUTOUPDATE_TRANSITION
 # M1091V55B_PARENT_OWNED_QUIET_PUBLIC_RESTART
+# M1091V55E_PUBLIC_STDERR_FILTER_AND_CONSOLE_STOP
+coded_m1091v55e_install_public_stderr_filter() {
+  # Hide only Bash job-control termination noise from killed public child jobs.
+  # Real errors remain visible. Set CODED_PUBLIC_DEBUG=1 to disable filtering.
+  if [ "${CODED_PUBLIC_DEBUG:-0}" = "1" ]; then
+    return 0
+  fi
+  if [ -n "${CODED_V55E_STDERR_FILTERED:-}" ]; then
+    return 0
+  fi
+  export CODED_V55E_STDERR_FILTERED=1
+  exec 3>&2
+  exec 2> >(awk '
+    /Terminated: 15/ && /CODED_|coded-runtime-sidecar|coded-miner|MINER_EXE/ { next }
+    { print > "/dev/fd/3"; fflush("/dev/fd/3") }
+  ')
+}
+
+coded_m1091v55e_stop_console_quiet() {
+  if [ -n "${CONSOLE_PID:-}" ] && kill -0 "$CONSOLE_PID" 2>/dev/null; then
+    kill "$CONSOLE_PID" 2>/dev/null || true
+    wait "$CONSOLE_PID" 2>/dev/null || true
+  fi
+}
+
+coded_m1091v55e_install_public_stderr_filter
 # Public default: keep update transitions clean. Set CODED_PUBLIC_DEBUG=1 for dev logs.
 CODED_PUBLIC_DEBUG="${CODED_PUBLIC_DEBUG:-0}"
 set +m 2>/dev/null || true
@@ -1236,6 +1262,7 @@ coded_m1091v51r_restart_if_required() {
 
   coded_m1091v54k_debug "[M1091V51R] restart.required detected reason=${reason:-autoupdate}"
 
+  coded_m1091v55e_stop_console_quiet
   coded_m1091v54k_public_restart_loader
   coded_m1091v55b_quiet_stop_public_children
   coded_m1091v53a_exec_fresh_runsh
@@ -1251,6 +1278,7 @@ coded_m1091v51s_exec_restart() {
 
   coded_m1091v54k_debug "[M1091V51S] parent restart signal received reason=${reason:-autoupdate}"
 
+  coded_m1091v55e_stop_console_quiet
   coded_m1091v54k_public_restart_loader
   coded_m1091v55b_quiet_stop_public_children
   coded_m1091v53a_exec_fresh_runsh
@@ -1310,6 +1338,7 @@ if command -v python3 >/dev/null 2>&1 && [ -f "$INSTALL_DIR/coded-public-console
     if [ -f "$STATE_DIR/restart.required" ] || [ -s "$PID_DIR/update.request" ]; then
       rm -f "$STATE_DIR/restart.required" "$PID_DIR/update.request" 2>/dev/null || true
 
+      coded_m1091v55e_stop_console_quiet
       coded_m1091v54k_public_restart_loader
       coded_m1091v55b_quiet_stop_public_children
 
@@ -1374,6 +1403,7 @@ fi
 # choose beta/latest.
 if [ "${CONSOLE_RC:-0}" = "143" ]; then
   coded_m1091v54k_debug "[M1091V54B] console exited by SIGTERM; attempting channel-safe runner restart"
+  coded_m1091v55e_stop_console_quiet
   coded_m1091v54k_public_restart_loader
   coded_m1091v55b_quiet_stop_public_children
   coded_m1091v53a_exec_fresh_runsh
