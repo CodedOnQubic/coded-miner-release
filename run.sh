@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # M1091V51N_FINAL_SAFE_PUBLIC_BETA_AUTOUPDATE_COMPAT
 # M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
+# M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
 # M1091V51C_BETA_AS_EFFECTIVE_RELEASE_NORMAL_PUBLIC_FLOW
 coded_m1091v51c_effective_download_url() {
   local default_url
@@ -831,6 +832,26 @@ coded_m1091v51p_kill_current_public_children() {
 
 coded_public_autoupdate_start() {
   # M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
+  # M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
+  local old_update_pid initial_commit initial_channel key_file
+
+  key_file="$STATE_DIR/release.key"
+
+  old_update_pid="$(cat "$PID_DIR/autoupdate.pid" 2>/dev/null || true)"
+  if [ -n "$old_update_pid" ] && kill -0 "$old_update_pid" 2>/dev/null; then
+    echo "[M1091V51Q] stopping old autoupdate pid=$old_update_pid"
+    kill "$old_update_pid" 2>/dev/null || true
+    sleep 1
+    kill -9 "$old_update_pid" 2>/dev/null || true
+  fi
+  rm -f "$PID_DIR/autoupdate.pid" 2>/dev/null || true
+
+  initial_commit="$(coded_manifest_commit "$INSTALL_DIR" | head -1)"
+  initial_channel="${CODED_RELEASE_CHANNEL:-latest}"
+  if [ -n "$initial_commit" ]; then
+    printf '%s:%s\n' "$initial_channel" "$initial_commit" > "$key_file" 2>/dev/null || true
+  fi
+
   case "${CODED_DISABLE_PUBLIC_AUTOUPDATE:-0}" in
     1|yes|YES|true|TRUE) return 0 ;;
   esac
