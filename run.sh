@@ -3,6 +3,52 @@
 # M1091V51N_FINAL_SAFE_PUBLIC_BETA_AUTOUPDATE_COMPAT
 # M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
 # M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
+
+# M1091V53A_CHANNEL_SAFE_PUBLIC_RESTART
+coded_m1091v53a_preserve_restart_env() {
+  export WALLET="${WALLET:-${CODED_WALLET:-}}"
+  export WORKER="${WORKER_SAFE:-${WORKER:-${CODED_WORKER:-${CODED_WORKER_NAME:-}}}}"
+  export BACKEND="${BACKEND:-${CODED_BACKEND:-auto}}"
+  export THREADS="${THREADS:-${CODED_THREADS:-0}}"
+  export POOL="${POOL:-${CODED_POOL:-pool.codedonqubic.com:7777}}"
+  export API_ROOT="${API_ROOT:-${CODED_POOL_API_BASE:-https://api.codedonqubic.com}}"
+
+  export CODED_WALLET="$WALLET"
+  export CODED_WORKER="$WORKER"
+  export CODED_WORKER_NAME="$WORKER"
+  export CODED_RIG_ID="$WORKER"
+  export CODED_BACKEND="$BACKEND"
+  export CODED_THREADS="$THREADS"
+  export CODED_POOL="$POOL"
+  export CODED_POOL_API_BASE="$API_ROOT"
+  export CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
+  export CODED_PUBLIC_BRAND_EVERY="${CODED_PUBLIC_BRAND_EVERY:-9}"
+  export CODED_PUBLIC_LINE_SEC="${CODED_PUBLIC_LINE_SEC:-1}"
+  export CODED_PUBLIC_BOOT_STATUS="${CODED_PUBLIC_BOOT_STATUS:-Updating CODED MINER}"
+  export CODED_PUBLIC_BOOT_SEC="${CODED_PUBLIC_BOOT_SEC:-10}"
+
+  # Next run.sh must recompute beta/latest from channel-status.
+  # This prevents stale beta URLs after Push Beta to Public disables beta.
+  unset CODED_RELEASE_DOWNLOAD_URL CODED_RELEASE_ASSET_NAME CODED_BETA_SELECTED_NORMAL_FLOW
+
+  if coded_m1091v50h_beta_requested; then
+    export CODED_BETA_REQUESTED="1"
+    export CODED_BETA="yes"
+    export BETA="yes"
+  else
+    export CODED_BETA_REQUESTED="0"
+    unset CODED_BETA BETA
+  fi
+}
+
+coded_m1091v53a_exec_fresh_runsh() {
+  coded_m1091v53a_preserve_restart_env
+  if coded_m1091v50h_beta_requested; then
+    exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")" -- -beta
+  fi
+  exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")"
+}
+
 # M1091V51R_EXEC_RESTART_REQUIRED_AFTER_AUTOUPDATE
 # M1091V51S_PARENT_SIGNAL_RESTART_WATCHER
 # M1091V51T_RESTART_WATCHER_CALL_AFTER_DEFINITION
@@ -134,17 +180,24 @@ coded_m1091v50v_exec_macos_beta_binary_if_present() {
 # - beta asset is downloaded from active beta.version tag, never from GitHub releases/latest
 # - if beta fails, falls back to original public/latest run.sh below
 coded_m1091v50h_beta_requested() {
-  # M1091V50I2_RUN_SH_BETA_ARG0_SUPPORT
-  # Supports both:
-  #   bash -c "$(curl ...)" -- -beta
-  #   bash -c "$(curl ...)" -beta
+  # M1091V53A_CHANNEL_SAFE_PUBLIC_RESTART
+  # Supports CLI beta flags, restart-preserved beta intent,
+  # env beta flags, and Hive/jsonish extra config such as {"beta":"yes"}.
   case " ${0:-} $* " in
     *" --beta "*|*" -beta "*) return 0 ;;
   esac
 
-  case "${BETA:-}${CODED_BETA:-}${CODED_RELEASE_CHANNEL:-}" in
-    yes|YES|true|TRUE|1|beta|BETA) return 0 ;;
-  esac
+  local v
+  for v in \
+    "${CODED_BETA_REQUESTED:-}" \
+    "${BETA:-}" \
+    "${CODED_BETA:-}" \
+    "${CODED_RELEASE_CHANNEL:-}"
+  do
+    case "$v" in
+      1|yes|YES|true|TRUE|beta|BETA) return 0 ;;
+    esac
+  done
 
   for v in \
     "${CUSTOM_CONFIG:-}" \
@@ -155,7 +208,8 @@ coded_m1091v50h_beta_requested() {
     "${CODED_USER_CONFIG:-}" \
     "${EXTRA_CONFIG:-}"
   do
-    printf '%s\n' "$v" | grep -Eiq '"?beta"?[[:space:]]*[:=][[:space:]]*"?((yes)|(true)|(1))"?' && return 0
+    printf '%s
+' "$v" | grep -Eiq '"?beta"?[[:space:]]*[:=][[:space:]]*"?((yes)|(true)|(1))"?' && return 0
   done
 
   return 1
@@ -273,6 +327,7 @@ if coded_m1091v50h_beta_requested "$@"; then
     else
       export CODED_RELEASE_STATUS="latest"
       export CODED_RELEASE_CHANNEL="latest"
+      unset CODED_RELEASE_DOWNLOAD_URL CODED_RELEASE_ASSET_NAME CODED_BETA_SELECTED_NORMAL_FLOW
       echo "Status: latest | release_channel=latest | beta_fallback=1"
     fi
   }
@@ -1105,11 +1160,8 @@ coded_m1091v51r_restart_if_required() {
 
   echo "[M1091V51R] restart.required detected reason=${reason:-autoupdate}"
 
-  export CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
-  export CODED_BETA_REQUESTED="${CODED_BETA_REQUESTED:-0}"
-
-coded_ui_loader 75 "Preparing restart"
-  exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")" -- "$@"
+  coded_ui_loader 75 "Preparing restart"
+  coded_m1091v53a_exec_fresh_runsh
 }
 
 
@@ -1122,11 +1174,8 @@ coded_m1091v51s_exec_restart() {
 
   echo "[M1091V51S] parent restart signal received reason=${reason:-autoupdate}"
 
-  export CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
-  export CODED_BETA_REQUESTED="${CODED_BETA_REQUESTED:-0}"
-
   coded_ui_loader 75 "Preparing restart"
-  exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")"
+  coded_m1091v53a_exec_fresh_runsh
 }
 
 coded_m1091v51s_start_restart_watcher() {
@@ -1217,7 +1266,7 @@ if [ -s "$PID_DIR/update.request" ]; then
   coded_ui_loader 100 "Restarting neural network training"
   coded_ui_loader_finish
 
-  exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")"
+  coded_m1091v53a_exec_fresh_runsh
 fi
 
 exit "$CONSOLE_RC"

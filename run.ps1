@@ -5,6 +5,7 @@ param(
   [ValidateSet("auto","scalar","avx2","avx512")]
   [string]$Backend = "auto",
   [string]$Pool = $env:CODED_POOL,
+  [switch]$Beta,
   [Parameter(ValueFromRemainingArguments=$true)]
   [string[]]$ExtraArgs
 )
@@ -21,6 +22,7 @@ param(
 # M1091V34K_WINDOWS_FIRST_OUTPUT_BRANDING
 # M1091V34M_WINDOWS_NO_REGISTRY_TLS_SPAM
 # M1091V34N_DISABLE_WINDOWS_INLINE_AUTOUPDATE
+# M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -460,6 +462,23 @@ while ($true) {
 
 Enable-CodedTls
 
+# M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE
+$script:CodedBetaRequested = $false
+if ($Beta) { $script:CodedBetaRequested = $true }
+foreach ($v in @($env:CODED_BETA_REQUESTED, $env:CODED_BETA, $env:BETA, $env:CODED_RELEASE_CHANNEL)) {
+  if (!$v) { continue }
+  if (([string]$v).ToLowerInvariant() -in @("1","yes","true","beta")) {
+    $script:CodedBetaRequested = $true
+  }
+}
+if ($script:CodedBetaRequested) {
+  $env:CODED_BETA_REQUESTED = "1"
+  $env:CODED_BETA = "yes"
+  $env:BETA = "yes"
+} else {
+  $env:CODED_BETA_REQUESTED = "0"
+}
+
 # M1091V27I_WINDOWS_SHORT_ARGS
 # Support public README shorthand:
 #   -avx2 -2
@@ -473,6 +492,7 @@ if ($ExtraArgs) {
     if (!$a) { continue }
 
     switch -Regex ($a.ToLowerInvariant()) {
+      '^--?beta$' { $script:CodedBetaRequested = $true; $env:CODED_BETA_REQUESTED = "1"; $env:CODED_BETA = "yes"; $env:BETA = "yes"; continue }
       '^-avx2$'   { $Backend = "avx2"; continue }
       '^-avx512$' { $Backend = "avx512"; continue }
       '^-scalar$' { $Backend = "scalar"; continue }
@@ -563,9 +583,98 @@ function Send-CodedReleaseStatusV43Y {
   }
 }
 
+# M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE
+function New-CodedWindowsReleaseSelectionV53B {
+  param(
+    [string]$Channel,
+    [string]$Version,
+    [string]$Commit,
+    [string]$Asset,
+    [string]$Url
+  )
+
+  $o = New-Object PSObject
+  $o | Add-Member NoteProperty Channel $Channel
+  $o | Add-Member NoteProperty Version $Version
+  $o | Add-Member NoteProperty Commit $Commit
+  $o | Add-Member NoteProperty Asset $Asset
+  $o | Add-Member NoteProperty Url $Url
+  return $o
+}
+
+function Get-CodedWindowsAssetNameV53B {
+  param([string]$Channel)
+  if ($Channel -eq "beta") { return "coded-miner-windows-amd64-beta-latest.tar.gz" }
+  return "coded-miner-windows-amd64-latest.tar.gz"
+}
+
+function Get-CodedWindowsReleaseSelectionV53B {
+  param([bool]$BetaRequested)
+
+  Enable-CodedTls
+
+  $repo = "https://github.com/CodedOnQubic/coded-miner-release/releases"
+  $poolApi = $env:CODED_POOL_API_URL
+  if (!$poolApi) { $poolApi = $env:POOL_API_URL }
+  if (!$poolApi) { $poolApi = "http://178.104.150.57:4000" }
+  $poolApi = $poolApi.TrimEnd("/")
+
+  try {
+    $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $statusUrl = "$poolApi/admin/release/channel-status?cb=$cb"
+    $resp = Invoke-WebRequest -UseBasicParsing -Uri $statusUrl -TimeoutSec 15 -Headers @{ "User-Agent" = "CODED-Windows-Public-Runner" }
+    $j = $resp.Content | ConvertFrom-Json
+
+    if ($BetaRequested -and $j.beta -and $j.beta.version -and $j.beta.commit) {
+      $asset = Get-CodedWindowsAssetNameV53B "beta"
+      $version = [string]$j.beta.version
+      $commit = ([string]$j.beta.commit).ToLowerInvariant()
+      $url = "$repo/download/$version/$asset"
+      return New-CodedWindowsReleaseSelectionV53B "beta" $version $commit $asset $url
+    }
+
+    if ($j.public_latest -and $j.public_latest.version) {
+      $asset = Get-CodedWindowsAssetNameV53B "latest"
+      $version = [string]$j.public_latest.version
+      $commit = ""
+      if ($j.public_latest.commit) { $commit = ([string]$j.public_latest.commit).ToLowerInvariant() }
+      $url = "$repo/download/$version/$asset"
+      return New-CodedWindowsReleaseSelectionV53B "latest" $version $commit $asset $url
+    }
+  } catch {
+    Write-Host "[PUBLIC] M1091V53B channel-status fallback: $($_.Exception.Message)"
+  }
+
+  try {
+    $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $apiUrl = "https://api.github.com/repos/CodedOnQubic/coded-miner-release/releases/latest?cb=$cb"
+    $resp = Invoke-WebRequest -UseBasicParsing -Uri $apiUrl -TimeoutSec 20 -Headers @{ "User-Agent" = "CODED-Windows-Public-Runner" }
+    $json = $resp.Content | ConvertFrom-Json
+    $version = [string]$json.tag_name
+    $commit = ""
+    if ($version -match "-([0-9a-fA-F]{7,40})-[0-9]{8}T[0-9]{6}Z$") {
+      $commit = $Matches[1].ToLowerInvariant()
+    }
+    $asset = Get-CodedWindowsAssetNameV53B "latest"
+    $url = "$repo/latest/download/$asset"
+    return New-CodedWindowsReleaseSelectionV53B "latest" $version $commit $asset $url
+  } catch {
+    $asset = Get-CodedWindowsAssetNameV53B "latest"
+    return New-CodedWindowsReleaseSelectionV53B "latest" "" "" $asset "$repo/latest/download/$asset"
+  }
+}
+
 $root = Join-Path $base "miner"
-$dir = Join-Path $root "latest"
-$tgz = Join-Path $root "coded-miner-windows-amd64-latest.tar.gz"
+New-Item -ItemType Directory -Force $root | Out-Null
+$script:CodedReleaseSelection = Get-CodedWindowsReleaseSelectionV53B -BetaRequested:$script:CodedBetaRequested
+if (!$script:CodedReleaseSelection) {
+  $script:CodedReleaseSelection = New-CodedWindowsReleaseSelectionV53B "latest" "" "" "coded-miner-windows-amd64-latest.tar.gz" "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
+}
+$script:CodedEffectiveChannel = [string]$script:CodedReleaseSelection.Channel
+if (!$script:CodedEffectiveChannel) { $script:CodedEffectiveChannel = "latest" }
+
+$dir = Join-Path $root $script:CodedEffectiveChannel
+$tgz = Join-Path $root $script:CodedReleaseSelection.Asset
 $log = Join-Path $root "coded-miner.log"
 $analytics = Join-Path $root "coded-windows-analytics.ps1"
 
@@ -682,20 +791,181 @@ function Start-CodedWindowsSafeAutoupdate {
   } -ArgumentList $Root, $CurrentCommit, $ExePath, $Worker, $sec, $flag, $last | Out-Null
 }
 
+# M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE
+function Start-CodedWindowsChannelAutoupdateV53B {
+  param(
+    [string]$Root,
+    [string]$CurrentChannel,
+    [string]$CurrentCommit,
+    [string]$ExePath,
+    [string]$Worker,
+    [bool]$BetaRequested
+  )
+
+  $sec = 60
+  if ($env:CODED_PUBLIC_UPDATE_SEC) {
+    try {
+      $parsed = [int]$env:CODED_PUBLIC_UPDATE_SEC
+      if ($parsed -ge 30) { $sec = $parsed }
+    } catch {}
+  }
+
+  $flag = Join-Path $Root "coded-windows-update-requested.flag"
+  $last = Join-Path $Root "coded-windows-last-requested.txt"
+  Remove-Item $flag -Force -ErrorAction SilentlyContinue
+
+  Start-Job -Name ("coded-win-channel-autoupdate-" + $Worker) -ScriptBlock {
+    param($Root, $CurrentChannel, $CurrentCommit, $ExePath, $Worker, $Sec, $Flag, $Last, $BetaRequested)
+
+    function Enable-CodedTlsJobV53B {
+      try { [Net.ServicePointManager]::SecurityProtocol = 3072 } catch {}
+    }
+
+    function AssetNameV53B([string]$Channel) {
+      if ($Channel -eq "beta") { return "coded-miner-windows-amd64-beta-latest.tar.gz" }
+      return "coded-miner-windows-amd64-latest.tar.gz"
+    }
+
+    function SelectionV53B([bool]$WantBeta) {
+      Enable-CodedTlsJobV53B
+      $repo = "https://github.com/CodedOnQubic/coded-miner-release/releases"
+      $poolApi = $env:CODED_POOL_API_URL
+      if (!$poolApi) { $poolApi = $env:POOL_API_URL }
+      if (!$poolApi) { $poolApi = "http://178.104.150.57:4000" }
+      $poolApi = $poolApi.TrimEnd("/")
+
+      try {
+        $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $resp = Invoke-WebRequest -UseBasicParsing -Uri "$poolApi/admin/release/channel-status?cb=$cb" -TimeoutSec 15 -Headers @{ "User-Agent" = "CODED-Windows-Public-Runner" }
+        $j = $resp.Content | ConvertFrom-Json
+
+        if ($WantBeta -and $j.beta -and $j.beta.version -and $j.beta.commit) {
+          $asset = AssetNameV53B "beta"
+          return @{
+            Channel = "beta"
+            Version = [string]$j.beta.version
+            Commit = ([string]$j.beta.commit).ToLowerInvariant()
+            Asset = $asset
+            Url = "$repo/download/$([string]$j.beta.version)/$asset"
+          }
+        }
+
+        if ($j.public_latest -and $j.public_latest.version) {
+          $asset = AssetNameV53B "latest"
+          $commit = ""
+          if ($j.public_latest.commit) { $commit = ([string]$j.public_latest.commit).ToLowerInvariant() }
+          return @{
+            Channel = "latest"
+            Version = [string]$j.public_latest.version
+            Commit = $commit
+            Asset = $asset
+            Url = "$repo/download/$([string]$j.public_latest.version)/$asset"
+          }
+        }
+      } catch {}
+
+      try {
+        $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $resp = Invoke-WebRequest -UseBasicParsing -Uri "https://api.github.com/repos/CodedOnQubic/coded-miner-release/releases/latest?cb=$cb" -TimeoutSec 20 -Headers @{ "User-Agent" = "CODED-Windows-Public-Runner" }
+        $json = $resp.Content | ConvertFrom-Json
+        $version = [string]$json.tag_name
+        $commit = ""
+        if ($version -match "-([0-9a-fA-F]{7,40})-[0-9]{8}T[0-9]{6}Z$") {
+          $commit = $Matches[1].ToLowerInvariant()
+        }
+        return @{
+          Channel = "latest"
+          Version = $version
+          Commit = $commit
+          Asset = (AssetNameV53B "latest")
+          Url = "$repo/latest/download/$(AssetNameV53B "latest")"
+        }
+      } catch {
+        return @{ Channel = "latest"; Version = ""; Commit = ""; Asset = (AssetNameV53B "latest"); Url = "$repo/latest/download/$(AssetNameV53B "latest")" }
+      }
+    }
+
+    $currentKey = "$CurrentChannel`:$CurrentCommit"
+
+    while ($true) {
+      Start-Sleep -Seconds $Sec
+      try {
+        $sel = SelectionV53B $BetaRequested
+        if (!$sel) { continue }
+
+        $targetChannel = [string]$sel.Channel
+        $targetCommit = [string]$sel.Commit
+        $targetVersion = [string]$sel.Version
+
+        if (!$targetChannel) { $targetChannel = "latest" }
+        if (!$targetCommit) { continue }
+
+        $targetKey = "$targetChannel`:$targetCommit"
+
+        if ($targetKey -eq $currentKey) {
+          Write-Host "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker up_to_date key=$currentKey"
+          continue
+        }
+
+        $now = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $lastKey = ""
+        $lastTs = 0
+
+        if (Test-Path $Last) {
+          try {
+            $parts = (Get-Content $Last -Raw).Trim().Split(" ")
+            if ($parts.Length -ge 2) {
+              $lastKey = $parts[0]
+              $lastTs = [int64]$parts[1]
+            }
+          } catch {}
+        }
+
+        $age = $now - $lastTs
+        if ($lastKey -eq $targetKey -and $age -lt 900) {
+          Write-Host "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker update_already_requested local=$currentKey target=$targetKey age_sec=$age"
+          continue
+        }
+
+        "$targetKey $now" | Set-Content -Path $Last -Encoding ASCII
+        "update_needed local=$currentKey target=$targetKey version=$targetVersion" | Set-Content -Path $Flag -Encoding ASCII
+
+        Write-Host "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE worker=$Worker update_needed local=$currentKey target=$targetKey version=$targetVersion action=stop_miner"
+
+        Get-Process -ErrorAction SilentlyContinue | Where-Object {
+          $_.Path -and ($_.Path -eq $ExePath)
+        } | Stop-Process -Force -ErrorAction SilentlyContinue
+
+        break
+      } catch {
+        Write-Host "[PUBLIC] M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE_ERROR worker=$Worker error=$($_.Exception.Message)"
+      }
+    }
+  } -ArgumentList $Root, $CurrentChannel, $CurrentCommit, $ExePath, $Worker, $sec, $flag, $last, $BetaRequested | Out-Null
+}
+
 
 
 Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force $dir | Out-Null
 New-Item -ItemType Directory -Force $root | Out-Null
 
-$url = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
-Write-Host "Downloading latest Windows universal miner..."
+$url = [string]$script:CodedReleaseSelection.Url
+if (!$url) { $url = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz" }
+Write-Host ("Downloading " + $script:CodedEffectiveChannel + " Windows universal miner...")
+Write-Host ("Release channel: " + $script:CodedEffectiveChannel + " | version=" + [string]$script:CodedReleaseSelection.Version + " | commit=" + [string]$script:CodedReleaseSelection.Commit)
 Download-File $url $tgz
 
 Write-Host "Extracting..."
 Expand-TarGz $tgz $dir
 
 $CurrentCommit = Get-CodedWindowsLocalCommit $dir
+if (!$CurrentCommit -and $script:CodedReleaseSelection.Commit) { $CurrentCommit = [string]$script:CodedReleaseSelection.Commit }
+$env:CODED_RELEASE_CHANNEL = $script:CodedEffectiveChannel
+$env:CODED_RELEASE_STATUS = $script:CodedEffectiveChannel
+$env:CODED_RELEASE_COMMIT = $CurrentCommit
+$env:CODED_RELEASE_VERSION = [string]$script:CodedReleaseSelection.Version
+Write-Host ("Current release channel: " + $script:CodedEffectiveChannel)
 Write-Host ("Current release commit: " + $CurrentCommit)
 
 $selected = $Backend.ToLowerInvariant()
@@ -757,7 +1027,7 @@ $env:CODED_ANALYTICS_API = if ($env:CODED_ANALYTICS_API) { $env:CODED_ANALYTICS_
 $env:CODED_ANALYTICS_TOKEN = if ($env:CODED_ANALYTICS_TOKEN) { $env:CODED_ANALYTICS_TOKEN } else { "coded_analytics_ingest_2026_secure_token" }
 
 Write-CodedWindowsAnalytics $analytics
-Start-CodedWindowsSafeAutoupdate -Root $root -CurrentCommit $CurrentCommit -ExePath $exe -Worker $Worker
+Start-CodedWindowsChannelAutoupdateV53B -Root $root -CurrentChannel $script:CodedEffectiveChannel -CurrentCommit $CurrentCommit -ExePath $exe -Worker $Worker -BetaRequested:$script:CodedBetaRequested
 
 
 function Format-CodedPublicRate($Value) {
@@ -930,7 +1200,7 @@ try {
   # M1091V39A_WINDOWS_INLINE_SAFE_AUTOUPDATE
   $updateFlag = Join-Path $root "coded-windows-update-requested.flag"
   if (Test-Path $updateFlag) {
-    Write-Host "CODED Miner update requested. Restarting public runner on latest..."
+    Write-Host "CODED Miner update requested. Restarting public runner channel-safe..."
     Remove-Item $updateFlag -Force -ErrorAction SilentlyContinue
 
     $self = $PSCommandPath
@@ -947,6 +1217,7 @@ try {
         "-Backend",$Backend,
         "-Threads","$Threads"
       )
+      if ($script:CodedBetaRequested) { $args += "-Beta" }
       Start-Process powershell -ArgumentList $args | Out-Null
       exit
     }
