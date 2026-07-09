@@ -3,6 +3,7 @@
 # M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
 # M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
 # M1091V51R_EXEC_RESTART_REQUIRED_AFTER_AUTOUPDATE
+# M1091V51S_PARENT_SIGNAL_RESTART_WATCHER
 # M1091V51C_BETA_AS_EFFECTIVE_RELEASE_NORMAL_PUBLIC_FLOW
 coded_m1091v51c_effective_download_url() {
   local default_url
@@ -1083,6 +1084,7 @@ ANALYTICS_PID=$!
 echo "$ANALYTICS_PID" > "$PID_DIR/analytics.pid"
 
 coded_public_autoupdate_start
+coded_m1091v51s_start_restart_watcher
 
 coded_ui_warmup "$CODED_PUBLIC_BOOT_SEC"
 coded_ui_loader 100 "Neural network training online"
@@ -1105,9 +1107,54 @@ coded_m1091v51r_restart_if_required() {
   export CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
   export CODED_BETA_REQUESTED="${CODED_BETA_REQUESTED:-0}"
 
-  coded_m1091v51r_restart_if_required "$@"
 coded_ui_loader 75 "Preparing restart"
   exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")" -- "$@"
+}
+
+
+# M1091V51S_PARENT_SIGNAL_RESTART_WATCHER
+coded_m1091v51s_exec_restart() {
+  local reason
+
+  reason="$(cat "$STATE_DIR/restart.required" 2>/dev/null || true)"
+  rm -f "$STATE_DIR/restart.required" 2>/dev/null || true
+
+  echo "[M1091V51S] parent restart signal received reason=${reason:-autoupdate}"
+
+  export CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
+  export CODED_BETA_REQUESTED="${CODED_BETA_REQUESTED:-0}"
+
+  coded_ui_loader 75 "Preparing restart"
+  exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")"
+}
+
+coded_m1091v51s_start_restart_watcher() {
+  local parent_pid old_watch_pid
+
+  parent_pid="$$"
+
+  old_watch_pid="$(cat "$PID_DIR/restart-watch.pid" 2>/dev/null || true)"
+  if [ -n "$old_watch_pid" ] && kill -0 "$old_watch_pid" 2>/dev/null; then
+    echo "[M1091V51S] stopping old restart watcher pid=$old_watch_pid"
+    kill "$old_watch_pid" 2>/dev/null || true
+    sleep 1
+    kill -9 "$old_watch_pid" 2>/dev/null || true
+  fi
+  rm -f "$PID_DIR/restart-watch.pid" 2>/dev/null || true
+
+  trap 'coded_m1091v51s_exec_restart' USR1
+
+  (
+    while true; do
+      sleep 2
+      if [ -f "$STATE_DIR/restart.required" ]; then
+        kill -USR1 "$parent_pid" 2>/dev/null || true
+        exit 0
+      fi
+    done
+  ) &
+
+  echo "$!" > "$PID_DIR/restart-watch.pid" 2>/dev/null || true
 }
 
 # M1091V32A_PUBLIC_RUNSH_CONSOLE
