@@ -5,10 +5,29 @@
 # M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
 
 # M1091V53A_CHANNEL_SAFE_PUBLIC_RESTART
+# M1091V54B_PUBLIC_RUNNER_RESTART_AND_MAC_ARM_NEON_LABEL
 coded_m1091v53a_preserve_restart_env() {
   export WALLET="${WALLET:-${CODED_WALLET:-}}"
   export WORKER="${WORKER_SAFE:-${WORKER:-${CODED_WORKER:-${CODED_WORKER_NAME:-}}}}"
   export BACKEND="${BACKEND:-${CODED_BACKEND:-auto}}"
+
+  # M1091V54B: macOS ARM must continue on the NEON path across autoupdate.
+  # Older runs may have exported CODED_BACKEND=scalar because the binary name
+  # contained "scalar"; do not let that stale label poison the restart.
+  case "$(uname -s 2>/dev/null):$(uname -m 2>/dev/null)" in
+    Darwin:arm64|Darwin:aarch64)
+      case "$BACKEND" in
+        ""|auto|AUTO|scalar|SCALAR|ARM|arm)
+          BACKEND="arm-neon"
+          ;;
+      esac
+      export CODED_PLATFORM="macos-arm64"
+      export CODED_BACKEND="arm-neon"
+      export CODED_KERNEL_BACKEND="arm-neon"
+      export CODED_ARM_NEON_KERNEL="${CODED_ARM_NEON_KERNEL:-compat32}"
+      ;;
+  esac
+
   export THREADS="${THREADS:-${CODED_THREADS:-0}}"
   export POOL="${POOL:-${CODED_POOL:-pool.codedonqubic.com:7777}}"
   export API_ROOT="${API_ROOT:-${CODED_POOL_API_BASE:-https://api.codedonqubic.com}}"
@@ -1063,6 +1082,16 @@ case "$(basename "$MINER_EXE")" in
   coded-miner) [ "$PLATFORM" = "macos-arm64" ] && SELECTED_BACKEND="${CODED_BACKEND:-arm-neon}" ;;
 esac
 
+# M1091V54B: On macOS ARM the runtime path is NEON even if the shipped
+# executable has a scalar-looking filename. The frontend should not classify it
+# as x86 scalar.
+if [ "$PLATFORM" = "macos-arm64" ]; then
+  SELECTED_BACKEND="${CODED_MAC_ARM_BACKEND_LABEL:-arm-neon}"
+  export CODED_BACKEND="$SELECTED_BACKEND"
+  export CODED_KERNEL_BACKEND="$SELECTED_BACKEND"
+  export CODED_ARM_NEON_KERNEL="${CODED_ARM_NEON_KERNEL:-compat32}"
+fi
+
 if [ ! -f "$INSTALL_DIR/coded-runtime-sidecar.py" ]; then
   echo "ERROR: coded-runtime-sidecar.py missing in package"
   find "$INSTALL_DIR" -maxdepth 2 -type f | sort
@@ -1266,6 +1295,16 @@ if [ -s "$PID_DIR/update.request" ]; then
   coded_ui_loader 100 "Restarting neural network training"
   coded_ui_loader_finish
 
+  coded_m1091v53a_exec_fresh_runsh
+fi
+
+# M1091V54B: If the autoupdater killed the miner/console with SIGTERM but the
+# explicit update flag was already consumed or missed, do not drop the terminal
+# back to the shell. Re-enter the public runner once and let channel-status
+# choose beta/latest.
+if [ "${CONSOLE_RC:-0}" = "143" ]; then
+  echo "[M1091V54B] console exited by SIGTERM; attempting channel-safe runner restart"
+  coded_ui_loader 75 "Preparing restart"
   coded_m1091v53a_exec_fresh_runsh
 fi
 

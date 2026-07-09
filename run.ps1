@@ -23,6 +23,9 @@ param(
 # M1091V34M_WINDOWS_NO_REGISTRY_TLS_SPAM
 # M1091V34N_DISABLE_WINDOWS_INLINE_AUTOUPDATE
 # M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE
+# M1091V54B_PUBLIC_RUNNER_RESTART_AND_MAC_ARM_NEON_LABEL
+# M1091V54C_WINDOWS_SINGLE_SESSION_RESTART_CLEANUP
+# M1091V54D_WINDOWS_CLEAN_SINGLE_RUNNER
 # Windows public runner:
 # - Windows 8 compatible TLS bootstrap
 # - tar.exe-free .tar.gz extraction fallback
@@ -1168,9 +1171,62 @@ function Write-CodedPublicFrame([string]$Line) {
 }
 
 
+# M1091V54D_WINDOWS_CLEAN_SINGLE_RUNNER
+function Stop-CodedWindowsDuplicateRunnersV54D {
+  param([string]$Worker)
+
+  try {
+    $escapedWorker = [regex]::Escape([string]$Worker)
+
+    Get-WmiObject Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+      $_.ProcessId -ne $PID -and
+      $_.Name -match "powershell" -and
+      $_.CommandLine -and
+      (
+        $_.CommandLine -match "\\r\.ps1" -or
+        $_.CommandLine -match "run\.ps1"
+      ) -and
+      $_.CommandLine -notmatch "coded-windows-analytics\.ps1" -and
+      ($escapedWorker -eq "" -or $_.CommandLine -match $escapedWorker)
+    } | ForEach-Object {
+      Write-Host "[PUBLIC] M1091V54D stopping duplicate CODED runner pid=$($_.ProcessId)"
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+  } catch {
+    Write-Host "[PUBLIC] M1091V54D duplicate runner cleanup skipped: $($_.Exception.Message)"
+  }
+}
+
+Stop-CodedWindowsDuplicateRunnersV54D -Worker $Worker
+
+# M1091V54C_WINDOWS_SINGLE_SESSION_RESTART_CLEANUP
+function Stop-CodedWindowsStaleAnalyticsV54C {
+  param([string]$Worker)
+
+  try {
+    $escapedWorker = [regex]::Escape([string]$Worker)
+
+    Get-WmiObject Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+      $_.ProcessId -ne $PID -and
+      $_.Name -match "powershell" -and
+      $_.CommandLine -and
+      $_.CommandLine -match "coded-windows-analytics\.ps1" -and
+      ($escapedWorker -eq "" -or $_.CommandLine -match $escapedWorker)
+    } | ForEach-Object {
+      Write-Host "[PUBLIC] M1091V54C stopping stale analytics process pid=$($_.ProcessId)"
+      Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+    }
+  } catch {
+    Write-Host "[PUBLIC] M1091V54C stale analytics cleanup skipped: $($_.Exception.Message)"
+  }
+}
+
+Stop-CodedWindowsStaleAnalyticsV54C -Worker $Worker
+
+
 Write-CodedPublicBrand
 Show-CodedPublicBootLoader "Neural network training online"
-Start-Process powershell -WindowStyle Minimized -ArgumentList @(
+Start-Process powershell -WindowStyle Hidden -ArgumentList @(
   "-NoProfile",
   "-ExecutionPolicy","Bypass",
   "-File",$analytics,
@@ -1207,19 +1263,20 @@ try {
     if (-not $self) { $self = $MyInvocation.MyCommand.Path }
 
     if ($self -and (Test-Path $self)) {
-      $args = @(
-        "-NoProfile",
-        "-ExecutionPolicy","Bypass",
-        "-File",$self,
-        "-Wallet",$Wallet,
-        "-Worker",$Worker,
-        "-Pool",$Pool,
-        "-Backend",$Backend,
-        "-Threads","$Threads"
-      )
-      if ($script:CodedBetaRequested) { $args += "-Beta" }
-      Start-Process powershell -ArgumentList $args | Out-Null
-      exit
+        $runnerArgs = @(
+          "-Wallet",$Wallet,
+          "-Worker",$Worker,
+          "-Pool",$Pool,
+          "-Backend",$Backend,
+          "-Threads","$Threads"
+        )
+        if ($script:CodedBetaRequested) { $runnerArgs += "-Beta" }
+
+        # M1091V54D: re-enter run.ps1 in the same PowerShell process.
+        # This prevents a new visible PowerShell window and avoids nested runner piles.
+        Write-Host "[PUBLIC] M1091V54D re-entering runner in same PowerShell process..."
+        & $self @runnerArgs
+        exit $LASTEXITCODE
     }
   }
 
