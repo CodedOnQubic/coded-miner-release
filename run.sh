@@ -4,6 +4,7 @@
 # M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
 # M1091V51R_EXEC_RESTART_REQUIRED_AFTER_AUTOUPDATE
 # M1091V51S_PARENT_SIGNAL_RESTART_WATCHER
+# M1091V51T_RESTART_WATCHER_CALL_AFTER_DEFINITION
 # M1091V51C_BETA_AS_EFFECTIVE_RELEASE_NORMAL_PUBLIC_FLOW
 coded_m1091v51c_effective_download_url() {
   local default_url
@@ -1084,7 +1085,6 @@ ANALYTICS_PID=$!
 echo "$ANALYTICS_PID" > "$PID_DIR/analytics.pid"
 
 coded_public_autoupdate_start
-coded_m1091v51s_start_restart_watcher
 
 coded_ui_warmup "$CODED_PUBLIC_BOOT_SEC"
 coded_ui_loader 100 "Neural network training online"
@@ -1157,6 +1157,7 @@ coded_m1091v51s_start_restart_watcher() {
   echo "$!" > "$PID_DIR/restart-watch.pid" 2>/dev/null || true
 }
 
+coded_m1091v51s_start_restart_watcher
 # M1091V32A_PUBLIC_RUNSH_CONSOLE
 # Visible terminal uses coded-public-console.py.
 # Raw miner/analytics output remains in RUN_LOG for Universal Analytics.
