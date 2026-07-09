@@ -2,6 +2,7 @@
 # M1091V51N_FINAL_SAFE_PUBLIC_BETA_AUTOUPDATE_COMPAT
 # M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
 # M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
+# M1091V51R_EXEC_RESTART_REQUIRED_AFTER_AUTOUPDATE
 # M1091V51C_BETA_AS_EFFECTIVE_RELEASE_NORMAL_PUBLIC_FLOW
 coded_m1091v51c_effective_download_url() {
   local default_url
@@ -1086,6 +1087,28 @@ coded_public_autoupdate_start
 coded_ui_warmup "$CODED_PUBLIC_BOOT_SEC"
 coded_ui_loader 100 "Neural network training online"
 coded_ui_loader_finish
+
+
+# M1091V51R_EXEC_RESTART_REQUIRED_AFTER_AUTOUPDATE
+coded_m1091v51r_restart_if_required() {
+  local reason
+
+  if [ ! -f "$STATE_DIR/restart.required" ]; then
+    return 0
+  fi
+
+  reason="$(cat "$STATE_DIR/restart.required" 2>/dev/null || true)"
+  rm -f "$STATE_DIR/restart.required" 2>/dev/null || true
+
+  echo "[M1091V51R] restart.required detected reason=${reason:-autoupdate}"
+
+  export CODED_PUBLIC_UPDATE_SEC="${CODED_PUBLIC_UPDATE_SEC:-60}"
+  export CODED_BETA_REQUESTED="${CODED_BETA_REQUESTED:-0}"
+
+  coded_m1091v51r_restart_if_required "$@"
+coded_ui_loader 75 "Preparing restart"
+  exec bash -c "$(curl -fsSL --retry 3 "${CODED_PUBLIC_RUNSH_URL}?cb=$(date +%s)")" -- "$@"
+}
 
 # M1091V32A_PUBLIC_RUNSH_CONSOLE
 # Visible terminal uses coded-public-console.py.
