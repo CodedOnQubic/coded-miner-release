@@ -808,6 +808,44 @@ function Start-CodedWindowsSafeAutoupdate {
 }
 
 # M1091V53B_WINDOWS_BETA_CHANNEL_AUTOUPDATE
+
+# M1091V55F_WINDOWS_SINGLE_AUTUPDATE_JOB_CLEANUP
+function Stop-CodedWindowsAutoupdateJobsV55F {
+  param(
+    [string]$Worker
+  )
+
+  try {
+    $safeWorker = if ([string]::IsNullOrWhiteSpace($Worker)) { "coded-worker" } else { $Worker }
+
+    # Keep Windows reliable: do not touch miner/analytics processes here.
+    # Only remove stale PowerShell background autoupdate jobs for this worker.
+    $jobNames = @(
+      ("coded-win-channel-autoupdate-" + $safeWorker),
+      ("coded-win-autoupdate-" + $safeWorker)
+    )
+
+    foreach ($jobName in $jobNames) {
+      $jobs = @(Get-Job -Name $jobName -ErrorAction SilentlyContinue)
+      foreach ($job in $jobs) {
+        try {
+          if ($job.State -eq "Running") {
+            Stop-Job -Id $job.Id -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 250
+          }
+          Remove-Job -Id $job.Id -Force -ErrorAction SilentlyContinue
+          Write-CodedPublicDebugV54K "[PUBLIC] M1091V55F_WINDOWS_SINGLE_AUTUPDATE_JOB_CLEANUP removed_job=$jobName id=$($job.Id) state=$($job.State)"
+        } catch {
+          Write-CodedPublicDebugV54K "[PUBLIC] M1091V55F_WINDOWS_SINGLE_AUTUPDATE_JOB_CLEANUP remove_failed job=$jobName error=$($_.Exception.Message)"
+        }
+      }
+    }
+  } catch {
+    Write-CodedPublicDebugV54K "[PUBLIC] M1091V55F_WINDOWS_SINGLE_AUTUPDATE_JOB_CLEANUP outer_error=$($_.Exception.Message)"
+  }
+}
+
+
 function Start-CodedWindowsChannelAutoupdateV53B {
   param(
     [string]$Root,
@@ -825,6 +863,9 @@ function Start-CodedWindowsChannelAutoupdateV53B {
       if ($parsed -ge 30) { $sec = $parsed }
     } catch {}
   }
+
+  # M1091V55F_WINDOWS_SINGLE_AUTUPDATE_JOB_CLEANUP: ensure only one channel-aware autoupdate watcher exists per worker.
+  Stop-CodedWindowsAutoupdateJobsV55F -Worker $Worker
 
   $flag = Join-Path $Root "coded-windows-update-requested.flag"
   $last = Join-Path $Root "coded-windows-last-requested.txt"
