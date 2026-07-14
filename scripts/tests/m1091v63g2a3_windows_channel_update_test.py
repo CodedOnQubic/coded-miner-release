@@ -24,7 +24,7 @@ required = (
     "M1091V63G2A3_BETA_WATCHER_FAIL_CLOSED",
     "M1091V63G2A3_PERSIST_DESIRED_CHANNEL",
     "M1091V63G2A3_VALIDATED_INSTALL_CACHE",
-    "M1091V63G2A3_LIGHTWEIGHT_15_MINUTE_CHECK",
+    "M1091V63G2A3D_LIGHTWEIGHT_60_SECOND_CHECK",
     "M1091V63G2A3_IDEMPOTENT_VALIDATED_INSTALL",
     'desired-channel.txt',
     'resolved-channel.txt',
@@ -50,7 +50,7 @@ for marker in required:
         )
 
 for forbidden in (
-    "$sec = 60",
+    "$sec = 900",
     "if ($parsed -ge 30)",
     'Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue\nNew-Item -ItemType Directory -Force $dir',
 ):
@@ -60,10 +60,10 @@ for forbidden in (
         )
 
 if runner.count(
-    "$sec = 900"
+    "$sec = 60"
 ) != 2:
     raise SystemExit(
-        "ERROR: expected two 900-second updater defaults"
+        "ERROR: expected two lightweight 60-second updater defaults"
     )
 
 if runner.count(
@@ -85,6 +85,36 @@ if runner.count(
 ) != 7:
     raise SystemExit(
         "ERROR: release channel is not present in raw plus six payloads"
+    )
+
+# M1091V63G2A3D_MINUTE_CHECK_CONTRACT
+if runner.count(
+    "M1091V63G2A3D_LIGHTWEIGHT_60_SECOND_CHECK"
+) != 2:
+    raise SystemExit(
+        "ERROR: lightweight minute-check marker count is not two"
+    )
+
+if runner.count(
+    "if ($parsed -ge 60)"
+) != 2:
+    raise SystemExit(
+        "ERROR: minute-check minimum override count is not two"
+    )
+
+if "$sec = 900" in runner:
+    raise SystemExit(
+        "ERROR: old 15-minute cadence remains"
+    )
+
+if "Downloading changed " not in runner:
+    raise SystemExit(
+        "ERROR: download is not explicitly limited to changed targets"
+    )
+
+if "Using cached " not in runner:
+    raise SystemExit(
+        "ERROR: unchanged-target cached-install path is missing"
     )
 
 if runner.count(

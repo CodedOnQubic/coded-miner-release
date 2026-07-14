@@ -992,15 +992,15 @@ function Start-CodedWindowsSafeAutoupdate {
     [string]$Worker
   )
 
-  # M1091V63G2A3_LIGHTWEIGHT_15_MINUTE_CHECK
-  $sec = 900
+  # M1091V63G2A3D_LIGHTWEIGHT_60_SECOND_CHECK
+  $sec = 60
 
   if ($env:CODED_PUBLIC_UPDATE_SEC) {
     try {
       $parsed =
         [int]$env:CODED_PUBLIC_UPDATE_SEC
 
-      if ($parsed -ge 900) {
+      if ($parsed -ge 60) {
         $sec =
           $parsed
       }
@@ -1136,15 +1136,15 @@ function Start-CodedWindowsChannelAutoupdateV53B {
     [bool]$BetaRequested
   )
 
-  # M1091V63G2A3_LIGHTWEIGHT_15_MINUTE_CHECK
-  $sec = 900
+  # M1091V63G2A3D_LIGHTWEIGHT_60_SECOND_CHECK
+  $sec = 60
 
   if ($env:CODED_PUBLIC_UPDATE_SEC) {
     try {
       $parsed =
         [int]$env:CODED_PUBLIC_UPDATE_SEC
 
-      if ($parsed -ge 900) {
+      if ($parsed -ge 60) {
         $sec =
           $parsed
       }
