@@ -30,6 +30,7 @@ param(
 # M1091V55C_WINDOWS_JOB_SCOPE_DEBUG_HELPER_ROBUST
 # M1091V54K_PUBLIC_COSMETIC_AUTOUPDATE_TRANSITION
 # M1091V63G2A3E_WINDOWS8_SAFE_RELEASE_IDENTITY_UPDATE
+# M1091V63G2A3F_WINDOWS_BETA_STATUS_FAIL_CLOSED
 function Write-CodedPublicDebugV54K([string]$Message) {
   if ($env:CODED_PUBLIC_DEBUG -eq "1") {
     Write-Host $Message
@@ -699,7 +700,14 @@ function Get-CodedWindowsReleaseSelectionV53B {
       return New-CodedWindowsReleaseSelectionV53B "latest" $version $commit $asset $url
     }
   } catch {
-    Write-CodedPublicDebugV54K "[PUBLIC] M1091V53B channel-status fallback: $($_.Exception.Message)"
+    Write-CodedPublicDebugV54K "[PUBLIC] M1091V63G2A3F beta/latest channel-status unavailable: $($_.Exception.Message)"
+  }
+
+  # M1091V63G2A3F_OUTER_BETA_FAIL_CLOSED
+  # A Beta runner must never silently resolve to public/latest because
+  # the pool channel-status request temporarily failed.
+  if ($BetaRequested) {
+    return $null
   }
 
   try {
@@ -724,8 +732,94 @@ function Get-CodedWindowsReleaseSelectionV53B {
 $root = Join-Path $base "miner"
 New-Item -ItemType Directory -Force $root | Out-Null
 $script:CodedReleaseSelection = Get-CodedWindowsReleaseSelectionV53B -BetaRequested:$script:CodedBetaRequested
+
 if (!$script:CodedReleaseSelection) {
-  $script:CodedReleaseSelection = New-CodedWindowsReleaseSelectionV53B "latest" "" "" "coded-miner-windows-amd64-latest.tar.gz" "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
+  if ($script:CodedBetaRequested) {
+    # M1091V63G2A3F_CACHED_BETA_STARTUP_FALLBACK
+    # Preserve the already installed Beta during a temporary API outage.
+    # Do not silently switch the Beta one-liner to public/latest.
+    $cachedManifestPath = $null
+
+    foreach ($candidate in @(
+      (Join-Path $root "beta\release_manifest.json"),
+      (Join-Path $root "beta\coded-miner\release_manifest.json"),
+      (Join-Path $root "beta\manifest.json"),
+      (Join-Path $root "beta\coded-miner\manifest.json")
+    )) {
+      if (Test-Path $candidate) {
+        $cachedManifestPath = $candidate
+        break
+      }
+    }
+
+    if (!$cachedManifestPath) {
+      throw "Beta channel-status unavailable and no cached Beta installation exists."
+    }
+
+    $cachedManifest =
+      Get-Content $cachedManifestPath -Raw |
+      ConvertFrom-Json
+
+    $cachedCommit = [string]$cachedManifest.commit
+
+    if ($cachedManifest.source_commit) {
+      $cachedCommit =
+        [string]$cachedManifest.source_commit
+    }
+
+    $cachedVersion =
+      [string]$cachedManifest.version
+
+    if ($cachedManifest.asset_version) {
+      $cachedVersion =
+        [string]$cachedManifest.asset_version
+    }
+
+    if (
+      !$cachedCommit -or
+      !$cachedVersion
+    ) {
+      throw "Cached Beta manifest has no commit or version."
+    }
+
+    $cachedCommit =
+      $cachedCommit.ToLowerInvariant()
+
+    $cachedAsset =
+      Get-CodedWindowsAssetNameV53B "beta"
+
+    $cachedUrl =
+      "https://github.com/CodedOnQubic/" +
+      "coded-miner-release/releases/download/" +
+      $cachedVersion +
+      "/" +
+      $cachedAsset
+
+    $script:CodedReleaseSelection =
+      New-CodedWindowsReleaseSelectionV53B `
+        "beta" `
+        $cachedVersion `
+        $cachedCommit `
+        $cachedAsset `
+        $cachedUrl
+
+    Write-Host (
+      "Beta status temporarily unavailable; " +
+      "preserving cached Beta " +
+      $cachedCommit +
+      "."
+    )
+  } else {
+    $script:CodedReleaseSelection =
+      New-CodedWindowsReleaseSelectionV53B `
+        "latest" `
+        "" `
+        "" `
+        "coded-miner-windows-amd64-latest.tar.gz" `
+        "https://github.com/CodedOnQubic/" +
+        "coded-miner-release/releases/latest/download/" +
+        "coded-miner-windows-amd64-latest.tar.gz"
+  }
 }
 $script:CodedEffectiveChannel = [string]$script:CodedReleaseSelection.Channel
 if (!$script:CodedEffectiveChannel) { $script:CodedEffectiveChannel = "latest" }
@@ -972,6 +1066,13 @@ function Start-CodedWindowsChannelAutoupdateV53B {
           }
         }
       } catch {}
+
+      # M1091V63G2A3F_WATCHER_BETA_FAIL_CLOSED
+      # A failed status request means no decision. Keep the current miner
+      # running and retry on the next lightweight 60-second check.
+      if ($WantBeta) {
+        return $null
+      }
 
       try {
         $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
