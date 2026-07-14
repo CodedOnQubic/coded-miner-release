@@ -2,7 +2,7 @@ param(
   [string]$Wallet = $env:CODED_WALLET,
   [string]$Worker = $env:CODED_WORKER,
   [int]$Threads = 0,
-  [ValidateSet("auto","scalar","avx2","avx512")]
+  [ValidateSet("auto","scalar","avx2","avx512","cuda")]
   [string]$Backend = "auto",
   [string]$Pool = $env:CODED_POOL,
   [switch]$Beta,
@@ -29,7 +29,7 @@ param(
 # M1091V54J_WINDOWS_REENTER_WITHOUT_ARRAY_SPLATTING
 # M1091V55C_WINDOWS_JOB_SCOPE_DEBUG_HELPER_ROBUST
 # M1091V54K_PUBLIC_COSMETIC_AUTOUPDATE_TRANSITION
-# M1091V63G2A3_WINDOWS_CHANNEL_IDENTITY_AND_IDEMPOTENT_UPDATE
+# M1091V63G2A3E_WINDOWS8_SAFE_RELEASE_IDENTITY_UPDATE
 function Write-CodedPublicDebugV54K([string]$Message) {
   if ($env:CODED_PUBLIC_DEBUG -eq "1") {
     Write-Host $Message
@@ -223,12 +223,10 @@ while ($true) {
         if (-not $backendName) { $backendName = "unknown" }
 
         $runtimeBackend = S $m "runtime_backend" $backendName
-
-        # M1091V63G2A3_WINDOWS_RELEASE_IDENTITY_IN_ALL_ANALYTICS
+        # M1091V63G2A3E_WINDOWS_RELEASE_IDENTITY
         $releaseChannelValue = S $m "release_channel" $ReleaseChannel
         $releaseCommitValue = S $m "release_commit" $ReleaseCommit
         $releaseVersionValue = S $m "release_version" $ReleaseVersion
-
         $run = S $m "run_id" $RunId
         if (-not $run) { $run = "WIN_" + $workerName }
 
@@ -551,6 +549,7 @@ if ($ExtraArgs) {
       '^--?beta$' { $script:CodedBetaRequested = $true; $env:CODED_BETA_REQUESTED = "1"; $env:CODED_BETA = "yes"; $env:BETA = "yes"; continue }
       '^-avx2$'   { $Backend = "avx2"; continue }
       '^-avx512$' { $Backend = "avx512"; continue }
+      '^-cuda$' { $Backend = "cuda"; continue }
       '^-scalar$' { $Backend = "scalar"; continue }
       '^-auto$'   { $Backend = "auto"; continue }
       '^-threads=(\d+)$' { $Threads = [int]$Matches[1]; continue }
@@ -700,14 +699,8 @@ function Get-CodedWindowsReleaseSelectionV53B {
       return New-CodedWindowsReleaseSelectionV53B "latest" $version $commit $asset $url
     }
   } catch {
-    Write-CodedPublicDebugV54K "[PUBLIC] M1091V53B channel-status unavailable: $($_.Exception.Message)"
+    Write-CodedPublicDebugV54K "[PUBLIC] M1091V53B channel-status fallback: $($_.Exception.Message)"
   }
-
-  # M1091V63G2A3_BETA_FAIL_CLOSED_ON_STATUS_OUTAGE
-  # Beta may resolve to public/latest only after a successful channel-status
-  # response explicitly reports no active beta. A transport failure must not
-  # silently change the desired beta lane.
-  if ($BetaRequested) { return $null }
 
   try {
     $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -730,75 +723,9 @@ function Get-CodedWindowsReleaseSelectionV53B {
 
 $root = Join-Path $base "miner"
 New-Item -ItemType Directory -Force $root | Out-Null
-
-# M1091V63G2A3_PERSIST_DESIRED_CHANNEL
-$script:CodedDesiredChannel = if ($script:CodedBetaRequested) { "beta" } else { "latest" }
-$script:CodedDesiredChannelPath = Join-Path $root "desired-channel.txt"
-$script:CodedDesiredChannel | Set-Content -Path $script:CodedDesiredChannelPath -Encoding ASCII
-
 $script:CodedReleaseSelection = Get-CodedWindowsReleaseSelectionV53B -BetaRequested:$script:CodedBetaRequested
-
 if (!$script:CodedReleaseSelection) {
-  $cachedChannel = $script:CodedDesiredChannel
-  $resolvedChannelPath = Join-Path $root "resolved-channel.txt"
-
-  if ($script:CodedBetaRequested -and (Test-Path $resolvedChannelPath)) {
-    try {
-      $remembered = (Get-Content $resolvedChannelPath -Raw).Trim().ToLowerInvariant()
-      if ($remembered -in @("beta", "latest")) {
-        $cachedChannel = $remembered
-      }
-    } catch {}
-  }
-
-  $cachedDir = Join-Path $root $cachedChannel
-  $cachedManifest = Join-Path $cachedDir "release_manifest.json"
-
-  if (Test-Path $cachedManifest) {
-    try {
-      $cached = Get-Content $cachedManifest -Raw | ConvertFrom-Json
-
-      $cachedCommit = [string]$cached.commit
-      if ($cached.source_commit) {
-        $cachedCommit = [string]$cached.source_commit
-      }
-
-      $cachedVersion = [string]$cached.version
-      if ($cached.asset_version) {
-        $cachedVersion = [string]$cached.asset_version
-      }
-
-      $cachedAsset = Get-CodedWindowsAssetNameV53B $cachedChannel
-
-      $script:CodedReleaseSelection =
-        New-CodedWindowsReleaseSelectionV53B `
-          $cachedChannel `
-          $cachedVersion `
-          $cachedCommit `
-          $cachedAsset `
-          ""
-
-      Write-Host (
-        "Release status unavailable; using cached " +
-        $cachedChannel +
-        " installation."
-      )
-    } catch {}
-  }
-}
-
-if (!$script:CodedReleaseSelection) {
-  if ($script:CodedBetaRequested) {
-    throw "Beta status unavailable and no cached beta/latest resolution exists. Refusing silent public fallback."
-  }
-
-  $script:CodedReleaseSelection =
-    New-CodedWindowsReleaseSelectionV53B `
-      "latest" `
-      "" `
-      "" `
-      "coded-miner-windows-amd64-latest.tar.gz" `
-      "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
+  $script:CodedReleaseSelection = New-CodedWindowsReleaseSelectionV53B "latest" "" "" "coded-miner-windows-amd64-latest.tar.gz" "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz"
 }
 $script:CodedEffectiveChannel = [string]$script:CodedReleaseSelection.Channel
 if (!$script:CodedEffectiveChannel) { $script:CodedEffectiveChannel = "latest" }
@@ -831,159 +758,6 @@ function Get-CodedWindowsLocalCommit {
   return ""
 }
 
-# M1091V63G2A3_VALIDATED_INSTALL_CACHE
-function Get-CodedWindowsManifestInfoV63G2A3 {
-  param([string]$InstallDir)
-
-  foreach ($candidate in @(
-    (Join-Path $InstallDir "release_manifest.json"),
-    (Join-Path $InstallDir "coded-miner\release_manifest.json"),
-    (Join-Path $InstallDir "manifest.json"),
-    (Join-Path $InstallDir "coded-miner\manifest.json")
-  )) {
-    if (!(Test-Path $candidate)) {
-      continue
-    }
-
-    try {
-      $manifest =
-        Get-Content $candidate -Raw |
-        ConvertFrom-Json
-
-      $commit =
-        [string]$manifest.commit
-
-      if ($manifest.source_commit) {
-        $commit =
-          [string]$manifest.source_commit
-      }
-
-      $version =
-        [string]$manifest.version
-
-      if ($manifest.asset_version) {
-        $version =
-          [string]$manifest.asset_version
-      }
-
-      $platform =
-        [string]$manifest.platform
-
-      if (!$platform) {
-        $platform =
-          [string]$manifest.target
-      }
-
-      return @{
-        Path =
-          $candidate
-
-        Commit =
-          $commit.ToLowerInvariant()
-
-        Version =
-          $version
-
-        Platform =
-          $platform
-      }
-    } catch {}
-  }
-
-  return $null
-}
-
-function Test-CodedWindowsInstallReadyV63G2A3 {
-  param([string]$InstallDir)
-
-  $manifest =
-    Get-CodedWindowsManifestInfoV63G2A3 `
-      $InstallDir
-
-  if (!$manifest) {
-    return $false
-  }
-
-  if (
-    [string]$manifest.Platform -and
-    ([string]$manifest.Platform).ToLowerInvariant() -notmatch "windows"
-  ) {
-    return $false
-  }
-
-  foreach ($required in @(
-    "coded-miner.exe",
-    "coded-miner-scalar.exe",
-    "coded-miner-avx2.exe",
-    "coded-miner-avx512.exe"
-  )) {
-    if (
-      !(
-        Test-Path (
-          Join-Path $InstallDir $required
-        )
-      )
-    ) {
-      return $false
-    }
-  }
-
-  return $true
-}
-
-function Get-CodedFileSha256V63G2A3 {
-  param([string]$Path)
-
-  try {
-    $sha =
-      [Security.Cryptography.SHA256]::Create()
-
-    $stream =
-      [IO.File]::OpenRead($Path)
-
-    try {
-      return (
-        [BitConverter]::ToString(
-          $sha.ComputeHash($stream)
-        )
-      )
-        .Replace("-", "")
-        .ToLowerInvariant()
-    } finally {
-      $stream.Dispose()
-      $sha.Dispose()
-    }
-  } catch {
-    return ""
-  }
-}
-
-function Resolve-CodedWindowsPackageRootV63G2A3 {
-  param([string]$ExtractDir)
-
-  if (
-    Test-Path (
-      Join-Path $ExtractDir "release_manifest.json"
-    )
-  ) {
-    return $ExtractDir
-  }
-
-  $manifest =
-    Get-ChildItem `
-      $ExtractDir `
-      -Recurse `
-      -Filter "release_manifest.json" `
-      -ErrorAction SilentlyContinue |
-    Select-Object -First 1
-
-  if ($manifest) {
-    return $manifest.Directory.FullName
-  }
-
-  return ""
-}
-
 function Start-CodedWindowsSafeAutoupdate {
   param(
     [string]$Root,
@@ -992,18 +766,11 @@ function Start-CodedWindowsSafeAutoupdate {
     [string]$Worker
   )
 
-  # M1091V63G2A3D_LIGHTWEIGHT_60_SECOND_CHECK
   $sec = 60
-
   if ($env:CODED_PUBLIC_UPDATE_SEC) {
     try {
-      $parsed =
-        [int]$env:CODED_PUBLIC_UPDATE_SEC
-
-      if ($parsed -ge 60) {
-        $sec =
-          $parsed
-      }
+      $parsed = [int]$env:CODED_PUBLIC_UPDATE_SEC
+      if ($parsed -ge 30) { $sec = $parsed }
     } catch {}
   }
 
@@ -1136,18 +903,11 @@ function Start-CodedWindowsChannelAutoupdateV53B {
     [bool]$BetaRequested
   )
 
-  # M1091V63G2A3D_LIGHTWEIGHT_60_SECOND_CHECK
   $sec = 60
-
   if ($env:CODED_PUBLIC_UPDATE_SEC) {
     try {
-      $parsed =
-        [int]$env:CODED_PUBLIC_UPDATE_SEC
-
-      if ($parsed -ge 60) {
-        $sec =
-          $parsed
-      }
+      $parsed = [int]$env:CODED_PUBLIC_UPDATE_SEC
+      if ($parsed -ge 30) { $sec = $parsed }
     } catch {}
   }
 
@@ -1212,11 +972,6 @@ function Start-CodedWindowsChannelAutoupdateV53B {
           }
         }
       } catch {}
-
-      # M1091V63G2A3_BETA_WATCHER_FAIL_CLOSED
-      if ($WantBeta) {
-        return $null
-      }
 
       try {
         $cb = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -1300,388 +1055,28 @@ function Start-CodedWindowsChannelAutoupdateV53B {
 
 
 
-# M1091V63G2A3_IDEMPOTENT_VALIDATED_INSTALL
+Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
+New-Item -ItemType Directory -Force $dir | Out-Null
 New-Item -ItemType Directory -Force $root | Out-Null
 
-$targetCommit =
-  ([string]$script:CodedReleaseSelection.Commit)
-    .ToLowerInvariant()
+$url = [string]$script:CodedReleaseSelection.Url
+if (!$url) { $url = "https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-windows-amd64-latest.tar.gz" }
+Write-Host ("Downloading " + $script:CodedEffectiveChannel + " Windows universal miner...")
+Write-Host ("Release channel: " + $script:CodedEffectiveChannel + " | version=" + [string]$script:CodedReleaseSelection.Version + " | commit=" + [string]$script:CodedReleaseSelection.Commit)
+Download-File $url $tgz
 
-$targetVersion =
-  [string]$script:CodedReleaseSelection.Version
+Write-Host "Extracting..."
+Expand-TarGz $tgz $dir
 
-$localInfo =
-  Get-CodedWindowsManifestInfoV63G2A3 `
-    $dir
-
-$installReady =
-  Test-CodedWindowsInstallReadyV63G2A3 `
-    $dir
-
-$sameTarget =
-  $false
-
-if (
-  $installReady -and
-  $localInfo
-) {
-  if (
-    $targetCommit -and
-    $localInfo.Commit -eq $targetCommit
-  ) {
-    if (
-      !$targetVersion -or
-      $localInfo.Version -eq $targetVersion
-    ) {
-      $sameTarget =
-        $true
-    }
-  } elseif (
-    !$targetCommit -and
-    !$targetVersion
-  ) {
-    $sameTarget =
-      $true
-  }
-}
-
-if ($sameTarget) {
-  Write-Host (
-    "Using cached " +
-    $script:CodedEffectiveChannel +
-    " Windows miner | version=" +
-    $localInfo.Version +
-    " | commit=" +
-    $localInfo.Commit
-  )
-} else {
-  $url =
-    [string]$script:CodedReleaseSelection.Url
-
-  if (!$url) {
-    if ($installReady) {
-      Write-Host (
-        "Target URL unavailable; continuing validated local installation."
-      )
-    } else {
-      throw (
-        "No release URL and no validated local Windows installation."
-      )
-    }
-  } else {
-    $stageRoot =
-      Join-Path $root (
-        "staging-" +
-        [Guid]::NewGuid().ToString("N")
-      )
-
-    $stageExtract =
-      Join-Path $stageRoot "extract"
-
-    $stageTgz =
-      Join-Path `
-        $stageRoot `
-        $script:CodedReleaseSelection.Asset
-
-    New-Item `
-      -ItemType Directory `
-      -Force `
-      $stageExtract |
-    Out-Null
-
-    try {
-      Write-Host (
-        "Downloading changed " +
-        $script:CodedEffectiveChannel +
-        " Windows miner..."
-      )
-
-      Write-Host (
-        "Release channel: " +
-        $script:CodedEffectiveChannel +
-        " | version=" +
-        $targetVersion +
-        " | commit=" +
-        $targetCommit
-      )
-
-      Download-File `
-        $url `
-        $stageTgz
-
-      $assetSha256 =
-        Get-CodedFileSha256V63G2A3 `
-          $stageTgz
-
-      if (!$assetSha256) {
-        throw (
-          "Could not calculate Windows asset SHA256."
-        )
-      }
-
-      Expand-TarGz `
-        $stageTgz `
-        $stageExtract
-
-      $packageRoot =
-        Resolve-CodedWindowsPackageRootV63G2A3 `
-          $stageExtract
-
-      if (!$packageRoot) {
-        throw (
-          "Downloaded Windows package has no release_manifest.json."
-        )
-      }
-
-      if (
-        !(
-          Test-CodedWindowsInstallReadyV63G2A3 `
-            $packageRoot
-        )
-      ) {
-        throw (
-          "Downloaded Windows package is incomplete or has wrong platform."
-        )
-      }
-
-      $stageInfo =
-        Get-CodedWindowsManifestInfoV63G2A3 `
-          $packageRoot
-
-      if (
-        $targetCommit -and
-        $stageInfo.Commit -ne $targetCommit
-      ) {
-        throw (
-          "Downloaded manifest commit mismatch: " +
-          "expected=$targetCommit " +
-          "actual=$($stageInfo.Commit)"
-        )
-      }
-
-      if (
-        $targetVersion -and
-        $stageInfo.Version -ne $targetVersion
-      ) {
-        throw (
-          "Downloaded manifest version mismatch: " +
-          "expected=$targetVersion " +
-          "actual=$($stageInfo.Version)"
-        )
-      }
-
-      @{
-        desired_channel =
-          $script:CodedDesiredChannel
-
-        resolved_channel =
-          $script:CodedEffectiveChannel
-
-        commit =
-          $stageInfo.Commit
-
-        version =
-          $stageInfo.Version
-
-        asset_sha256 =
-          $assetSha256
-
-        installed_at =
-          (Get-Date)
-            .ToUniversalTime()
-            .ToString("o")
-      } |
-      ConvertTo-Json |
-      Set-Content `
-        -Path (
-          Join-Path `
-            $packageRoot `
-            "installed-fingerprint.json"
-        ) `
-        -Encoding ASCII
-
-      $backupDir =
-        Join-Path $root (
-          "backup-" +
-          $script:CodedEffectiveChannel +
-          "-" +
-          [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        )
-
-      if (Test-Path $backupDir) {
-        Remove-Item `
-          $backupDir `
-          -Recurse `
-          -Force `
-          -ErrorAction SilentlyContinue
-      }
-
-      if (Test-Path $dir) {
-        Move-Item `
-          $dir `
-          $backupDir `
-          -Force
-      }
-
-      try {
-        Move-Item `
-          $packageRoot `
-          $dir `
-          -Force
-      } catch {
-        if (Test-Path $dir) {
-          Remove-Item `
-            $dir `
-            -Recurse `
-            -Force `
-            -ErrorAction SilentlyContinue
-        }
-
-        if (Test-Path $backupDir) {
-          Move-Item `
-            $backupDir `
-            $dir `
-            -Force
-        }
-
-        throw
-      }
-
-      if (Test-Path $backupDir) {
-        Remove-Item `
-          $backupDir `
-          -Recurse `
-          -Force `
-          -ErrorAction SilentlyContinue
-      }
-
-      Write-Host (
-        "Installed validated Windows target sha256=" +
-        $assetSha256
-      )
-    } catch {
-      Write-Host (
-        "Windows update validation/download failed: " +
-        $_.Exception.Message
-      )
-
-      if (
-        !(
-          Test-CodedWindowsInstallReadyV63G2A3 `
-            $dir
-        )
-      ) {
-        $fallbackFound =
-          $false
-
-        foreach (
-          $fallbackChannel in @(
-            $script:CodedDesiredChannel,
-            "latest",
-            "beta"
-          )
-        ) {
-          $fallbackDir =
-            Join-Path `
-              $root `
-              $fallbackChannel
-
-          if (
-            Test-CodedWindowsInstallReadyV63G2A3 `
-              $fallbackDir
-          ) {
-            $dir =
-              $fallbackDir
-
-            $script:CodedEffectiveChannel =
-              $fallbackChannel
-
-            $fallbackFound =
-              $true
-
-            Write-Host (
-              "Continuing previous validated " +
-              $fallbackChannel +
-              " installation."
-            )
-
-            break
-          }
-        }
-
-        if (!$fallbackFound) {
-          throw
-        }
-      } else {
-        Write-Host (
-          "Continuing previous validated installation."
-        )
-      }
-    } finally {
-      if (Test-Path $stageRoot) {
-        Remove-Item `
-          $stageRoot `
-          -Recurse `
-          -Force `
-          -ErrorAction SilentlyContinue
-      }
-    }
-  }
-}
-
-$installedInfo =
-  Get-CodedWindowsManifestInfoV63G2A3 `
-    $dir
-
-if (!$installedInfo) {
-  throw (
-    "Installed Windows release manifest unavailable."
-  )
-}
-
-$CurrentCommit =
-  $installedInfo.Commit
-
-$CurrentVersion =
-  $installedInfo.Version
-
-$script:CodedResolvedChannelPath =
-  Join-Path $root "resolved-channel.txt"
-
-$script:CodedEffectiveChannel |
-Set-Content `
-  -Path $script:CodedResolvedChannelPath `
-  -Encoding ASCII
-
-$env:CODED_RELEASE_CHANNEL =
-  $script:CodedEffectiveChannel
-
-$env:CODED_RELEASE_STATUS =
-  $script:CodedEffectiveChannel
-
-$env:CODED_RELEASE_COMMIT =
-  $CurrentCommit
-
-$env:CODED_RELEASE_VERSION =
-  $CurrentVersion
-
-$env:CODED_RELEASE_MANIFEST =
-  $installedInfo.Path
-
-Write-Host (
-  "Current release channel: " +
-  $script:CodedEffectiveChannel
-)
-
-Write-Host (
-  "Current release commit: " +
-  $CurrentCommit
-)
-
-Write-Host (
-  "Current release version: " +
-  $CurrentVersion
-)
+$CurrentCommit = Get-CodedWindowsLocalCommit $dir
+if (!$CurrentCommit -and $script:CodedReleaseSelection.Commit) { $CurrentCommit = [string]$script:CodedReleaseSelection.Commit }
+$env:CODED_RELEASE_CHANNEL = $script:CodedEffectiveChannel
+$env:CODED_RELEASE_STATUS = $script:CodedEffectiveChannel
+$CurrentVersion = [string]$script:CodedReleaseSelection.Version
+$env:CODED_RELEASE_COMMIT = $CurrentCommit
+$env:CODED_RELEASE_VERSION = $CurrentVersion
+Write-Host ("Current release channel: " + $script:CodedEffectiveChannel)
+Write-Host ("Current release commit: " + $CurrentCommit)
 
 $selected = $Backend.ToLowerInvariant()
 if ($selected -eq "auto") {
@@ -1692,9 +1087,12 @@ if ($selected -eq "auto") {
     $selected = "scalar"
   }
 }
-if ($selected -notin @("scalar","avx2","avx512")) { $selected = "scalar" }
+if ($selected -notin @("scalar","avx2","avx512","cuda")) { $selected = "scalar" }
 
 $exe = Join-Path $dir ("coded-miner-{0}.exe" -f $selected)
+if ($selected -eq "cuda" -and !(Test-Path $exe)) {
+  throw "CUDA backend requested, but coded-miner-cuda.exe is not included in this Windows release."
+}
 if (!(Test-Path $exe)) {
   $exe = Join-Path $dir "coded-miner.exe"
 }

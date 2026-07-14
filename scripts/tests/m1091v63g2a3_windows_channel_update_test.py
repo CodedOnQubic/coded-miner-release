@@ -5,188 +5,157 @@ import re
 
 
 ROOT = Path(__file__).resolve().parents[2]
+RUNNER = ROOT / "run.ps1"
 
-runner_path = ROOT / "run.ps1"
-
-if not runner_path.is_file():
+if not RUNNER.is_file():
     raise SystemExit(
-        f"ERROR: missing runner: {runner_path}"
+        f"ERROR: missing runner: {RUNNER}"
     )
 
-runner = runner_path.read_text(
+source = RUNNER.read_text(
     encoding="utf-8",
 )
 
 required = (
-    "M1091V63G2A3_WINDOWS_CHANNEL_IDENTITY_AND_IDEMPOTENT_UPDATE",
-    "M1091V63G2A3_WINDOWS_RELEASE_IDENTITY_IN_ALL_ANALYTICS",
-    "M1091V63G2A3_BETA_FAIL_CLOSED_ON_STATUS_OUTAGE",
-    "M1091V63G2A3_BETA_WATCHER_FAIL_CLOSED",
-    "M1091V63G2A3_PERSIST_DESIRED_CHANNEL",
-    "M1091V63G2A3_VALIDATED_INSTALL_CACHE",
-    "M1091V63G2A3D_LIGHTWEIGHT_60_SECOND_CHECK",
-    "M1091V63G2A3_IDEMPOTENT_VALIDATED_INSTALL",
-    'desired-channel.txt',
-    'resolved-channel.txt',
-    'installed-fingerprint.json',
-    'asset_sha256',
-    'Get-CodedFileSha256V63G2A3',
-    'Downloaded manifest commit mismatch',
-    'Downloaded manifest version mismatch',
-    '$CurrentChannel`:$CurrentCommit`:$CurrentVersion',
-    '$targetChannel`:$targetCommit`:$targetVersion',
-    '-ReleaseChannel',
-    '-ReleaseCommit',
-    '-ReleaseVersion',
-    'release_channel = $releaseChannelValue',
-    'release_commit = $releaseCommitValue',
-    'release_version = $releaseVersionValue',
+    "M1091V63G2A3E_WINDOWS8_SAFE_RELEASE_IDENTITY_UPDATE",
+    "M1091V63G2A3E_WINDOWS_RELEASE_IDENTITY",
+    "M1091V55F_WINDOWS_SINGLE_AUTUPDATE_JOB_CLEANUP",
+    "Windows 8 compatible TLS bootstrap",
+    '[ValidateSet("auto","scalar","avx2","avx512","cuda")]',
+    "'^-cuda$'",
+    '("scalar","avx2","avx512","cuda")',
+    "coded-miner-cuda.exe is not included",
+    "$sec = 60",
+    '$currentKey = "$CurrentChannel`:$CurrentCommit`:$CurrentVersion"',
+    '$targetKey = "$targetChannel`:$targetCommit`:$targetVersion"',
+    "if ($targetKey -eq $currentKey)",
+    "action=stop_miner",
+    "-ReleaseChannel",
+    "-ReleaseCommit",
+    "-ReleaseVersion",
 )
 
 for marker in required:
-    if marker not in runner:
+    if marker not in source:
         raise SystemExit(
             f"ERROR: missing marker: {marker}"
         )
 
 for forbidden in (
-    "$sec = 900",
-    "if ($parsed -ge 30)",
-    'Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue\nNew-Item -ItemType Directory -Force $dir',
+    "M1091V63G2A3_VALIDATED_INSTALL_CACHE",
+    "M1091V63G2A3_IDEMPOTENT_VALIDATED_INSTALL",
+    "installed-fingerprint.json",
+    "staging-",
 ):
-    if forbidden in runner:
+    if forbidden in source:
         raise SystemExit(
-            f"ERROR: forbidden legacy logic remains: {forbidden}"
+            f"ERROR: incompatible rewrite remains: {forbidden}"
         )
 
-if runner.count(
+# Windows PowerShell 3 does not accept a new line followed by
+# .Method() as used by the reverted G2A3C implementation.
+bad_member_lines = re.findall(
+    r"(?m)^[ \t]+\.[A-Za-z_][A-Za-z0-9_]*\(",
+    source,
+)
+
+if bad_member_lines:
+    raise SystemExit(
+        "ERROR: Windows-8-incompatible multiline member calls: "
+        + repr(bad_member_lines)
+    )
+
+if source.count(
     "$sec = 60"
 ) != 2:
     raise SystemExit(
-        "ERROR: expected two lightweight 60-second updater defaults"
+        "ERROR: expected two existing one-minute defaults"
     )
 
-if runner.count(
-    "release_commit = $releaseCommitValue"
-) != 7:
-    raise SystemExit(
-        "ERROR: release commit is not present in raw plus six payloads"
-    )
-
-if runner.count(
-    "release_version = $releaseVersionValue"
-) != 7:
-    raise SystemExit(
-        "ERROR: release version is not present in raw plus six payloads"
-    )
-
-if runner.count(
-    "release_channel = $releaseChannelValue"
-) != 7:
-    raise SystemExit(
-        "ERROR: release channel is not present in raw plus six payloads"
-    )
-
-# M1091V63G2A3D_MINUTE_CHECK_CONTRACT
-if runner.count(
-    "M1091V63G2A3D_LIGHTWEIGHT_60_SECOND_CHECK"
-) != 2:
-    raise SystemExit(
-        "ERROR: lightweight minute-check marker count is not two"
-    )
-
-if runner.count(
-    "if ($parsed -ge 60)"
-) != 2:
-    raise SystemExit(
-        "ERROR: minute-check minimum override count is not two"
-    )
-
-if "$sec = 900" in runner:
-    raise SystemExit(
-        "ERROR: old 15-minute cadence remains"
-    )
-
-if "Downloading changed " not in runner:
-    raise SystemExit(
-        "ERROR: download is not explicitly limited to changed targets"
-    )
-
-if "Using cached " not in runner:
-    raise SystemExit(
-        "ERROR: unchanged-target cached-install path is missing"
-    )
-
-if runner.count(
+if source.count(
     "Start-CodedWindowsChannelAutoupdateV53B -Root"
 ) != 1:
     raise SystemExit(
-        "ERROR: active channel updater invocation count is not one"
+        "ERROR: active channel watcher count is not one"
+    )
+
+if source.count(
+    "release_channel = $releaseChannelValue"
+) != 7:
+    raise SystemExit(
+        "ERROR: release channel missing from raw/six payloads"
+    )
+
+if source.count(
+    "release_commit = $releaseCommitValue"
+) != 7:
+    raise SystemExit(
+        "ERROR: release commit missing from raw/six payloads"
+    )
+
+if source.count(
+    "release_version = $releaseVersionValue"
+) != 7:
+    raise SystemExit(
+        "ERROR: release version missing from raw/six payloads"
+    )
+
+watch_start = source.find(
+    "function Start-CodedWindowsChannelAutoupdateV53B {"
+)
+
+watch_end = source.find(
+    "\n}\n\n\n\nRemove-Item $dir",
+    watch_start,
+)
+
+if watch_start < 0 or watch_end < 0:
+    raise SystemExit(
+        "ERROR: watcher boundaries missing"
+    )
+
+watcher = source[
+    watch_start:
+    watch_end
+]
+
+for forbidden in (
+    "Download-File",
+    "Expand-TarGz",
+    "Remove-Item $dir",
+):
+    if forbidden in watcher:
+        raise SystemExit(
+            "ERROR: minute watcher performs installation work: "
+            + forbidden
+        )
+
+same_target = watcher.find(
+    "if ($targetKey -eq $currentKey)"
+)
+
+stop_miner = watcher.find(
+    "Stop-Process"
+)
+
+if (
+    same_target < 0 or
+    stop_miner < 0 or
+    same_target > stop_miner
+):
+    raise SystemExit(
+        "ERROR: unchanged-target guard is not before miner stop"
     )
 
 if re.search(
     r"Register-ScheduledTask|New-ScheduledTask|schtasks",
-    runner,
+    source,
     re.IGNORECASE,
 ):
     raise SystemExit(
-        "ERROR: OS scheduled task was added unexpectedly"
+        "ERROR: unexpected Windows scheduled task"
     )
 
-# Contract model:
-# latest never selects beta;
-# beta selects beta while active;
-# beta selects public after explicit beta disable;
-# beta status outage produces no channel switch.
-def select(
-    want_beta: bool,
-    status_ok: bool,
-    beta_active: bool,
-    public_available: bool,
-):
-    if status_ok:
-        if want_beta and beta_active:
-            return "beta"
-
-        if public_available:
-            return "latest"
-
-        return None
-
-    if want_beta:
-        return None
-
-    return "latest"
-
-
-assert select(
-    False,
-    True,
-    True,
-    True,
-) == "latest"
-
-assert select(
-    True,
-    True,
-    True,
-    True,
-) == "beta"
-
-assert select(
-    True,
-    True,
-    False,
-    True,
-) == "latest"
-
-assert select(
-    True,
-    False,
-    False,
-    True,
-) is None
-
 print(
-    "M1091V63G2A3_WINDOWS_CHANNEL_UPDATE_TEST_OK"
+    "M1091V63G2A3E_WINDOWS8_SAFE_UPDATE_TEST_OK"
 )
