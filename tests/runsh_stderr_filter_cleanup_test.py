@@ -70,7 +70,7 @@ cleanup_block = source[
 
 
 assert (
-    "exec 2> >(exec awk '"
+    "exec 2> >(trap '' HUP; exec awk '"
     in filter_function
 )
 

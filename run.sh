@@ -20,7 +20,11 @@ coded_m1091v55e_install_public_stderr_filter() {
   fi
   export CODED_V55E_STDERR_FILTERED=1
   exec 3>&2
-  exec 2> >(exec awk '
+  # M1091V55F/R3.3:
+  # The stderr filter is runner-owned, but group SIGHUP must be
+  # handled by the runner first. Ignore HUP in this process before
+  # exec so awk inherits the disposition without a persistent shell.
+  exec 2> >(trap '' HUP; exec awk '
     /Terminated: 15/ && /CODED_|coded-runtime-sidecar|coded-miner|MINER_EXE/ { next }
     { print > "/dev/fd/3"; fflush("/dev/fd/3") }
   ')
