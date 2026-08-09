@@ -1011,7 +1011,7 @@ coded_m1091v55f_valid_pid() {
 }
 
 
-coded_m1091v55f_stop_child() {
+coded_m1091v55f_stop_child_single() {
   local pid="${1:-}"
   local label="${2:-child}"
   local tick=0
@@ -1046,6 +1046,256 @@ coded_m1091v55f_stop_child() {
 
   wait "$pid" 2>/dev/null || true
 }
+
+
+# M1091V55F_R3_DESCENDANT_GROUP_CLEANUP_BEGIN
+
+coded_m1091v55f_direct_children() {
+  local parent="${1:-}"
+
+  coded_m1091v55f_valid_pid "$parent" ||
+    return 0
+
+  ps -axo pid=,ppid= 2>/dev/null |
+  awk -v parent="$parent" '
+    $2 == parent {
+      print $1
+    }
+  '
+}
+
+
+coded_m1091v55f_stop_descendants() {
+  local parent="${1:-}"
+  local label="${2:-child}"
+  local child=""
+  local children=""
+
+  coded_m1091v55f_valid_pid "$parent" ||
+    return 0
+
+  children="$(
+    coded_m1091v55f_direct_children "$parent" ||
+    true
+  )"
+
+  for child in $children
+  do
+    coded_m1091v55f_stop_descendants \
+      "$child" \
+      "${label}-descendant"
+
+    coded_m1091v55f_stop_child_single \
+      "$child" \
+      "${label}-descendant"
+  done
+}
+
+
+coded_m1091v55f_stop_child() {
+  local pid="${1:-}"
+  local label="${2:-child}"
+
+  coded_m1091v55f_valid_pid "$pid" ||
+    return 0
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  #
+  # Freeze the tracked parent while its current tree is collected.
+  # This closes the spawn-vs-cleanup race for watcher/autoupdate
+  # shells whose current wait is implemented by a child sleep.
+  #
+  kill -STOP "$pid" 2>/dev/null || true
+
+  coded_m1091v55f_stop_descendants \
+    "$pid" \
+    "$label"
+
+  #
+  # Queue TERM while stopped, then resume so traps/default TERM
+  # handling can complete. The R2 single-process helper retains
+  # the bounded TERM -> KILL fallback.
+  #
+  kill -TERM "$pid" 2>/dev/null || true
+  kill -CONT "$pid" 2>/dev/null || true
+
+  coded_m1091v55f_stop_child_single \
+    "$pid" \
+    "$label"
+}
+
+
+coded_m1091v55f_current_pgid() {
+  ps -o pgid= -p "$$" 2>/dev/null |
+  tr -d ' '
+}
+
+
+coded_m1091v55f_process_group_pids() {
+  local pgid="${1:-}"
+
+  case "$pgid" in
+    ""|*[!0-9]*|0|1)
+      return 0
+      ;;
+  esac
+
+  ps -axo pid=,pgid= 2>/dev/null |
+  awk -v pgid="$pgid" '
+    $2 == pgid {
+      print $1
+    }
+  '
+}
+
+
+coded_m1091v55f_capture_process_group_baseline() {
+  local pgid=""
+  local pid=""
+  local baseline=" "
+
+  if [ "${CODED_V55F_PGID_BASELINE_CAPTURED:-0}" = "1" ]; then
+    return 0
+  fi
+
+  pgid="$(
+    coded_m1091v55f_current_pgid ||
+    true
+  )"
+
+  case "$pgid" in
+    ""|*[!0-9]*|0|1)
+      return 0
+      ;;
+  esac
+
+  for pid in $(
+    coded_m1091v55f_process_group_pids "$pgid" ||
+    true
+  )
+  do
+    baseline="${baseline}${pid} "
+  done
+
+  CODED_V55F_RUNNER_PGID="$pgid"
+  CODED_V55F_PGID_BASELINE_PIDS="$baseline"
+  CODED_V55F_PGID_BASELINE_CAPTURED="1"
+
+  export CODED_V55F_RUNNER_PGID
+  export CODED_V55F_PGID_BASELINE_PIDS
+  export CODED_V55F_PGID_BASELINE_CAPTURED
+}
+
+
+coded_m1091v55f_pid_in_process_group_baseline() {
+  local pid="${1:-}"
+
+  case "${CODED_V55F_PGID_BASELINE_PIDS:- }" in
+    *" ${pid} "*)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
+
+coded_m1091v55f_stop_residual_pid() {
+  local pid="${1:-}"
+  local tick=0
+
+  coded_m1091v55f_valid_pid "$pid" ||
+    return 0
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  kill -TERM "$pid" 2>/dev/null || true
+
+  tick=0
+
+  while kill -0 "$pid" 2>/dev/null
+  do
+    if [ "$tick" -ge 20 ]; then
+      break
+    fi
+
+    sleep 0.05
+    tick=$((tick + 1))
+  done
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+}
+
+
+coded_m1091v55f_sweep_owned_process_group() {
+  local saved_pgid="${CODED_V55F_RUNNER_PGID:-}"
+  local current_pgid=""
+  local pid=""
+  local pass=0
+  local found=0
+
+  case "$saved_pgid" in
+    ""|*[!0-9]*|0|1)
+      return 0
+      ;;
+  esac
+
+  current_pgid="$(
+    coded_m1091v55f_current_pgid ||
+    true
+  )"
+
+  #
+  # Never act on a group different from the one captured when
+  # this runner installed its signal ownership.
+  #
+  [ "$current_pgid" = "$saved_pgid" ] ||
+    return 0
+
+  pass=0
+
+  while [ "$pass" -lt 4 ]
+  do
+    found=0
+
+    for pid in $(
+      coded_m1091v55f_process_group_pids "$saved_pgid" ||
+      true
+    )
+    do
+      coded_m1091v55f_valid_pid "$pid" ||
+        continue
+
+      [ "$pid" != "$$" ] ||
+        continue
+
+      if coded_m1091v55f_pid_in_process_group_baseline "$pid"; then
+        continue
+      fi
+
+      if kill -0 "$pid" 2>/dev/null; then
+        found=1
+
+        coded_m1091v55f_stop_residual_pid \
+          "$pid"
+      fi
+    done
+
+    [ "$found" -eq 1 ] ||
+      break
+
+    pass=$((pass + 1))
+  done
+}
+
+# M1091V55F_R3_DESCENDANT_GROUP_CLEANUP_END
 
 
 coded_m1091v55f_clear_pid_file() {
@@ -1142,6 +1392,10 @@ coded_m1091v55f_cleanup_children() {
       "$PID_DIR/restart-watch.pid" \
       "${RESTART_WATCH_PID:-}"
   fi
+  # M1091V55F/R3: remove any runner-created process that
+  # survived explicit tracked-child cleanup in this PGID.
+  coded_m1091v55f_sweep_owned_process_group
+
 }
 
 
@@ -1171,6 +1425,7 @@ coded_m1091v55f_exit_cleanup() {
 
 
 coded_m1091v55f_install_signal_traps() {
+  coded_m1091v55f_capture_process_group_baseline
   trap \
     'coded_m1091v55f_signal_exit HUP 129' \
     HUP
