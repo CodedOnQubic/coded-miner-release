@@ -223,5 +223,5 @@ powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;
 ```
 
 ```powershell
-Get-Content "$env:LOCALAPPDATA\CODED\miner\coded-miner.log" -Tail 80 | Select-String "ERROR|SUBMIT_SPOOL|spool|initialize|connect|subscribe"
+type "%LOCALAPPDATA%\CODED\miner\coded-miner.log" | findstr /I "ERROR SUBMIT_SPOOL spool initialize connect subscribe"
 ```
