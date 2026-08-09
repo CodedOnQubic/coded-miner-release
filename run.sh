@@ -978,6 +978,190 @@ coded_m1091v55b_quiet_stop_public_children() {
   done
 }
 
+# M1091V55F_PUBLIC_SIGNAL_TREE_CLEANUP_BEGIN
+#
+# A foreground public run.sh owns its child processes.
+#
+# SIGINT  = Ctrl+C
+# SIGHUP  = terminal/window closed
+# SIGTERM = service/supervisor stop
+#
+# All three must terminate miner + analytics sidecar and the
+# runner-owned console/autoupdate/restart-watcher children.
+#
+# Bash 3.2 compatible: shared macOS/Linux public one-liner.
+#
+CODED_V55F_CLEANUP_ACTIVE=0
+
+
+coded_m1091v55f_valid_pid() {
+  case "${1:-}" in
+    ""|*[!0-9]*|0|1)
+      return 1
+      ;;
+  esac
+
+  [ "$1" != "$$" ]
+}
+
+
+coded_m1091v55f_stop_child() {
+  local pid="${1:-}"
+  local label="${2:-child}"
+  local tick=0
+
+  coded_m1091v55f_valid_pid "$pid" ||
+    return 0
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  coded_m1091v54k_debug \
+    "[M1091V55F] stopping ${label} pid=${pid}"
+
+  kill -TERM "$pid" 2>/dev/null || true
+
+  tick=0
+
+  while kill -0 "$pid" 2>/dev/null
+  do
+    if [ "$tick" -ge 20 ]; then
+      break
+    fi
+
+    sleep 0.1
+    tick=$((tick + 1))
+  done
+
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+  fi
+
+  wait "$pid" 2>/dev/null || true
+}
+
+
+coded_m1091v55f_clear_pid_file() {
+  local file="${1:-}"
+  local expected="${2:-}"
+  local current=""
+
+  coded_m1091v55f_valid_pid "$expected" ||
+    return 0
+
+  [ -f "$file" ] ||
+    return 0
+
+  current="$(
+    tr -cd '0-9' < "$file" 2>/dev/null ||
+    true
+  )"
+
+  if [ "$current" = "$expected" ]; then
+    rm -f "$file" 2>/dev/null || true
+  fi
+}
+
+
+coded_m1091v55f_cleanup_children() {
+  local reason="${1:-runner_exit}"
+
+  if [ "${CODED_V55F_CLEANUP_ACTIVE:-0}" = "1" ]; then
+    return 0
+  fi
+
+  CODED_V55F_CLEANUP_ACTIVE=1
+
+  coded_m1091v54k_debug \
+    "[M1091V55F] child-tree cleanup reason=${reason}"
+
+  # Disable anything capable of initiating another restart first.
+  coded_m1091v55f_stop_child \
+    "${RESTART_WATCH_PID:-}" \
+    "restart-watcher"
+
+  coded_m1091v55f_stop_child \
+    "${UPDATE_PID:-}" \
+    "autoupdate"
+
+  # Then close UI and runtime children.
+  coded_m1091v55f_stop_child \
+    "${CONSOLE_PID:-}" \
+    "public-console"
+
+  coded_m1091v55f_stop_child \
+    "${MINER_PID:-}" \
+    "miner"
+
+  coded_m1091v55f_stop_child \
+    "${ANALYTICS_PID:-}" \
+    "analytics-sidecar"
+
+  if [ -n "${PID_DIR:-}" ]; then
+    coded_m1091v55f_clear_pid_file \
+      "$PID_DIR/miner.pid" \
+      "${MINER_PID:-}"
+
+    coded_m1091v55f_clear_pid_file \
+      "$PID_DIR/analytics.pid" \
+      "${ANALYTICS_PID:-}"
+
+    coded_m1091v55f_clear_pid_file \
+      "$PID_DIR/autoupdate.pid" \
+      "${UPDATE_PID:-}"
+
+    coded_m1091v55f_clear_pid_file \
+      "$PID_DIR/restart-watch.pid" \
+      "${RESTART_WATCH_PID:-}"
+  fi
+}
+
+
+coded_m1091v55f_signal_exit() {
+  local signal_name="$1"
+  local exit_code="$2"
+
+  trap - HUP INT TERM EXIT
+
+  coded_m1091v55f_cleanup_children \
+    "signal_${signal_name}"
+
+  exit "$exit_code"
+}
+
+
+coded_m1091v55f_exit_cleanup() {
+  local exit_code="$?"
+
+  trap - EXIT
+
+  coded_m1091v55f_cleanup_children \
+    "runner_exit_${exit_code}"
+
+  exit "$exit_code"
+}
+
+
+coded_m1091v55f_install_signal_traps() {
+  trap \
+    'coded_m1091v55f_signal_exit HUP 129' \
+    HUP
+
+  trap \
+    'coded_m1091v55f_signal_exit INT 130' \
+    INT
+
+  trap \
+    'coded_m1091v55f_signal_exit TERM 143' \
+    TERM
+
+  trap \
+    'coded_m1091v55f_exit_cleanup' \
+    EXIT
+}
+# M1091V55F_PUBLIC_SIGNAL_TREE_CLEANUP_END
+
 coded_public_autoupdate_start() {
   # M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE
   # M1091V51Q_PUBLIC_AUTOUPDATE_SINGLE_LOOP_CLEANUP
@@ -1171,6 +1355,9 @@ if [ ! -f "$INSTALL_DIR/coded-runtime-sidecar.py" ]; then
   exit 1
 fi
 
+# M1091V55F: install terminal traps before first runtime child starts.
+coded_m1091v55f_install_signal_traps
+
 coded_ui_loader 72 "Starting neural network training"
 env \
   CODED_PLATFORM="$PLATFORM" \
@@ -1310,7 +1497,8 @@ coded_m1091v51s_start_restart_watcher() {
     done
   ) &
 
-  echo "$!" > "$PID_DIR/restart-watch.pid" 2>/dev/null || true
+  RESTART_WATCH_PID="$!"
+  echo "$RESTART_WATCH_PID" > "$PID_DIR/restart-watch.pid" 2>/dev/null || true
 }
 
 coded_m1091v51s_start_restart_watcher
@@ -1360,13 +1548,10 @@ else
   exit 88
 fi
 
-wait "$MINER_PID" 2>/dev/null || true
-wait "$ANALYTICS_PID" 2>/dev/null || true
-
-if [ -n "${UPDATE_PID:-}" ]; then
-  kill "$UPDATE_PID" 2>/dev/null || true
-  wait "$UPDATE_PID" 2>/dev/null || true
-fi
+# M1091V55F:
+# Console completion ends this foreground runner ownership.
+# Do not leave miner/sidecar behind and do not block forever.
+coded_m1091v55f_cleanup_children "console_exit"
 
 if [ -s "$PID_DIR/update.request" ]; then
   rm -f "$PID_DIR/update.request" 2>/dev/null || true
