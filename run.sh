@@ -1329,6 +1329,13 @@ coded_m1091v55f_cleanup_children() {
 
   CODED_V55F_CLEANUP_ACTIVE=1
 
+  # M1091V55F/R3.2:
+  # Group SIGHUP also reaches the direct awk stderr filter.
+  # Detach FD2 from that pipe before any cleanup action can emit.
+  if { : >&3; } 2>/dev/null; then
+    exec 2>&3 3>&-
+  fi
+
   coded_m1091v54k_debug \
     "[M1091V55F] child-tree cleanup reason=${reason}"
 
@@ -1356,17 +1363,9 @@ coded_m1091v55f_cleanup_children() {
 
   # M1091V55F/R2:
   # The stderr process-substitution filter is also runner-owned.
-  #
-  # Restore stderr to FD 3 first. This closes the pipe writer in
-  # this shell, allowing the direct awk process to receive EOF.
-  #
-  # If it does not exit promptly, the normal child stop helper
-  # provides TERM -> KILL fallback.
+  # FD2 was already restored at cleanup entry. If the filter does
+  # not exit from EOF, the normal child helper provides TERM -> KILL.
   if coded_m1091v55f_valid_pid "${CODED_V55E_STDERR_FILTER_PID:-}"; then
-    if { : >&3; } 2>/dev/null; then
-      exec 2>&3 3>&-
-    fi
-
     coded_m1091v55f_stop_child \
       "${CODED_V55E_STDERR_FILTER_PID:-}" \
       "stderr-filter"
