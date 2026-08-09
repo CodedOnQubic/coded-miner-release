@@ -739,7 +739,7 @@ coded_stop_old_public_instances() {
           kill "$pid" 2>/dev/null || true
         ;;
       esac
-    done
+    done || true
   done
 
   sleep 1
@@ -752,7 +752,7 @@ coded_stop_old_public_instances() {
           kill -9 "$pid" 2>/dev/null || true
         ;;
       esac
-    done
+    done || true
   done
 }
 
