@@ -20,10 +20,16 @@ coded_m1091v55e_install_public_stderr_filter() {
   fi
   export CODED_V55E_STDERR_FILTERED=1
   exec 3>&2
-  exec 2> >(awk '
+  exec 2> >(exec awk '
     /Terminated: 15/ && /CODED_|coded-runtime-sidecar|coded-miner|MINER_EXE/ { next }
     { print > "/dev/fd/3"; fflush("/dev/fd/3") }
   ')
+
+  # M1091V55F/R2: process substitution is now a direct awk
+  # child owned by this runner. Export the PID because channel-safe
+  # restarts use exec and must retain ownership of the same filter.
+  CODED_V55E_STDERR_FILTER_PID="$!"
+  export CODED_V55E_STDERR_FILTER_PID
 }
 
 coded_m1091v55e_stop_console_quiet() {
@@ -1097,6 +1103,27 @@ coded_m1091v55f_cleanup_children() {
   coded_m1091v55f_stop_child \
     "${ANALYTICS_PID:-}" \
     "analytics-sidecar"
+
+  # M1091V55F/R2:
+  # The stderr process-substitution filter is also runner-owned.
+  #
+  # Restore stderr to FD 3 first. This closes the pipe writer in
+  # this shell, allowing the direct awk process to receive EOF.
+  #
+  # If it does not exit promptly, the normal child stop helper
+  # provides TERM -> KILL fallback.
+  if coded_m1091v55f_valid_pid "${CODED_V55E_STDERR_FILTER_PID:-}"; then
+    if { : >&3; } 2>/dev/null; then
+      exec 2>&3 3>&-
+    fi
+
+    coded_m1091v55f_stop_child \
+      "${CODED_V55E_STDERR_FILTER_PID:-}" \
+      "stderr-filter"
+
+    unset CODED_V55E_STDERR_FILTER_PID
+    unset CODED_V55E_STDERR_FILTERED
+  fi
 
   if [ -n "${PID_DIR:-}" ]; then
     coded_m1091v55f_clear_pid_file \
