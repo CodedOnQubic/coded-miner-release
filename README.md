@@ -221,3 +221,7 @@ Report issues, bugs, or performance results.
 ```powershell
 powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI -Worker RigPortable_Win8"
 ```
+
+```powershell
+Get-Content "$env:LOCALAPPDATA\CODED\miner\coded-miner.log" -Tail 80 | Select-String "ERROR|SUBMIT_SPOOL|spool|initialize|connect|subscribe"
+```
