@@ -1679,61 +1679,13 @@ coded_m1091p055_activate_macos_beta_bpp9000() {
       ;;
   esac
 
-  # M1091P056_RESOLVE_MINER_FULL_COMMIT_FOR_TASK
+  # M1091P059_PUBLIC_RELEASE_TASK_AUTHORITY
   #
-  # Release channel-status may expose the canonical miner commit as a
-  # short SHA (for example 42d9018). raw.githubusercontent.com requires
-  # a resolvable full Git object ref here. Resolve the short SHA through
-  # GitHub first, then keep the task SHA256 as the final content authority.
-  if [ "${#source_commit}" -lt 40 ]; then
-    resolved_source_commit="$(
-      curl \
-        -fsSL \
-        --retry 3 \
-        --connect-timeout 5 \
-        --max-time 15 \
-        "https://api.github.com/repos/CodedOnQubic/coded-miner/commits/${source_commit}" \
-      | python3 -c '
-import json
-import sys
-
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    raise SystemExit(1)
-
-sha = str(data.get("sha") or "").strip()
-
-if (
-    len(sha) != 40
-    or any(c not in "0123456789abcdefABCDEF" for c in sha)
-):
-    raise SystemExit(2)
-
-print(sha)
-'
-    )" || resolved_source_commit=""
-
-    if [ -z "$resolved_source_commit" ]; then
-      echo \
-        "ERROR macos_anthill activation denied reason=source_commit_resolution_failed short_commit=$source_commit"
-
-      return 1
-    fi
-
-    source_commit="$resolved_source_commit"
-  fi
-
-  case "$source_commit" in
-    ????????????????????????????????????????)
-      ;;
-    *)
-      echo \
-        "ERROR macos_anthill activation denied reason=source_commit_not_full commit=${source_commit:-missing}"
-
-      return 1
-      ;;
-  esac
+  # coded-miner is private and is not a runtime transport authority.
+  # The canonical BPP9000 task is published in coded-miner-release
+  # and pinned to an immutable public release-repository commit.
+  # Integrity remains fail-closed under expected_task_sha.
+  task_release_commit="9d7475ee2a9b5e6f0a520e9ce7251ed954811756"
 
   case "$THREADS" in
     ''|*[!0-9]*|0)
@@ -1748,7 +1700,7 @@ print(sha)
   if [ ! -f "$task_file" ]; then
     task_tmp="${task_file}.tmp.$$"
 
-    task_url="https://raw.githubusercontent.com/CodedOnQubic/coded-miner/${source_commit}/release/hiveos/coded-miner/task_bpp9000.bin"
+    task_url="https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/${task_release_commit}/runtime/anthill/task_bpp9000.bin"
 
     rm -f "$task_tmp"
 
@@ -1763,7 +1715,7 @@ print(sha)
       rm -f "$task_tmp"
 
       echo \
-        "ERROR macos_anthill activation denied reason=task_download_failed commit=$source_commit"
+        "ERROR macos_anthill activation denied reason=task_download_failed task_release_commit=$task_release_commit miner_release_commit=${source_commit:-missing}"
 
       return 1
     fi
