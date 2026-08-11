@@ -1640,6 +1640,206 @@ if [ ! -f "$INSTALL_DIR/coded-runtime-sidecar.py" ]; then
   exit 1
 fi
 
+
+# M1091P055_MACOS_BETA_BPP9000_RUNTIME_AUTHORITY
+#
+# macOS Anthill Beta runtime contract.
+#
+# Preserve the exact miner binary/release commit. The runner only supplies
+# the explicit BPP9000 task, per-worker L vector and deterministic physical
+# nonce namespace required by the production runtime.
+#
+# Public/latest remains unchanged.
+coded_m1091p055_activate_macos_beta_bpp9000() {
+  local task_file=""
+  local task_tmp=""
+  local task_url=""
+  local expected_task_sha=""
+  local actual_task_sha=""
+  local source_commit=""
+  local l_values=""
+  local nonce_namespace_slot=""
+
+  [ "$PLATFORM" = "macos-arm64" ] || return 0
+  [ "${CODED_RELEASE_CHANNEL:-latest}" = "beta" ] || return 0
+
+  expected_task_sha="403e24225f5b0512d0cbf49758fed9a01e7334d3cea565ad6c5e82420b713226"
+
+  source_commit="$(
+    printf '%s' \
+      "${CODED_RELEASE_COMMIT:-${CODED_MINER_COMMIT:-}}" \
+      | tr -d '[:space:]'
+  )"
+
+  case "$source_commit" in
+    ''|*[!0-9a-fA-F]*)
+      echo \
+        "ERROR macos_anthill activation denied reason=source_commit_invalid commit=${source_commit:-missing}"
+      return 1
+      ;;
+  esac
+
+  case "$THREADS" in
+    ''|*[!0-9]*|0)
+      echo \
+        "ERROR macos_anthill activation denied reason=threads_invalid threads=${THREADS:-missing}"
+      return 1
+      ;;
+  esac
+
+  task_file="$INSTALL_DIR/task_bpp9000.bin"
+
+  if [ ! -f "$task_file" ]; then
+    task_tmp="${task_file}.tmp.$$"
+
+    task_url="https://raw.githubusercontent.com/CodedOnQubic/coded-miner/${source_commit}/release/hiveos/coded-miner/task_bpp9000.bin"
+
+    rm -f "$task_tmp"
+
+    if ! curl \
+      -fsSL \
+      --retry 3 \
+      --connect-timeout 5 \
+      --max-time 20 \
+      "$task_url" \
+      -o "$task_tmp"
+    then
+      rm -f "$task_tmp"
+
+      echo \
+        "ERROR macos_anthill activation denied reason=task_download_failed commit=$source_commit"
+
+      return 1
+    fi
+
+    mv "$task_tmp" "$task_file"
+  fi
+
+  actual_task_sha="$(
+    shasum -a 256 "$task_file" \
+      | awk '{print $1}'
+  )"
+
+  if [ "$actual_task_sha" != "$expected_task_sha" ]; then
+    echo \
+      "ERROR macos_anthill activation denied reason=task_checksum expected=$expected_task_sha actual=${actual_task_sha:-missing}"
+
+    return 1
+  fi
+
+  l_values="$(
+    python3 - "$THREADS" <<'PYL'
+import sys
+
+threads = int(sys.argv[1])
+
+if threads <= 0:
+    raise SystemExit(2)
+
+print(
+    ",".join(
+        str((i % 10) + 1)
+        for i in range(threads)
+    )
+)
+PYL
+  )"
+
+  [ -n "$l_values" ] || {
+    echo \
+      "ERROR macos_anthill activation denied reason=l_values_missing"
+
+    return 1
+  }
+
+  #
+  # Physical-worker namespace authority.
+  #
+  # Hive uses its canonical numeric RIG_ID directly.
+  # macOS canonical physical identity is WORKER_SAFE. Convert that stable
+  # identity deterministically into the upper half of uint32 so Mac
+  # namespaces are stable and separated from the currently deployed
+  # low-number numeric Hive rig IDs.
+  #
+  nonce_namespace_slot="$(
+    python3 - "$WORKER_SAFE" <<'PYN'
+import hashlib
+import sys
+
+worker = str(sys.argv[1] or "").strip()
+
+if not worker:
+    raise SystemExit(2)
+
+digest = hashlib.sha256(
+    (
+        "coded-anthill-macos-nonce-v1:"
+        + worker
+    ).encode("utf-8")
+).digest()
+
+raw = int.from_bytes(
+    digest[:4],
+    "big",
+)
+
+slot = (
+    0x80000000
+    |
+    (
+        raw
+        & 0x7fffffff
+    )
+)
+
+if slot <= 0 or slot > 0xffffffff:
+    raise SystemExit(3)
+
+print(slot)
+PYN
+  )"
+
+  case "$nonce_namespace_slot" in
+    ''|*[!0-9]*)
+      echo \
+        "ERROR macos_anthill activation denied reason=nonce_namespace_invalid value=${nonce_namespace_slot:-missing}"
+
+      return 1
+      ;;
+  esac
+
+  if \
+    [ "$nonce_namespace_slot" -le 0 ] \
+    || [ "$nonce_namespace_slot" -gt 4294967295 ]
+  then
+    echo \
+      "ERROR macos_anthill activation denied reason=nonce_namespace_range value=$nonce_namespace_slot"
+
+    return 1
+  fi
+
+  export CODED_BPP9000_TASK_FILE_PATH="$task_file"
+  export CODED_BPP9000_L_VALUES="$l_values"
+  export CODED_BPP9000_NONCE_NAMESPACE_SLOT="$nonce_namespace_slot"
+
+  export CODED_ANTHILL_ROUTER_PROFILE="ANTHILL_R0_DIRECT"
+  export CODED_ANTHILL_TASK_SHA256="$expected_task_sha"
+  export CODED_ANTHILL_SOLUTION_THRESHOLD="6469"
+  export CODED_ANTHILL_ACTIVATION_REVISION="M1091P055"
+
+  coded_m1091v54k_debug \
+    "[M1091P055] macos_anthill=active channel=beta worker=$WORKER_SAFE threads=$THREADS task_sha256=$actual_task_sha nonce_namespace_slot=$CODED_BPP9000_NONCE_NAMESPACE_SLOT"
+
+  return 0
+}
+
+coded_m1091p055_activate_macos_beta_bpp9000 || {
+  echo \
+    "ERROR macOS Anthill BPP9000 activation failed closed"
+
+  exit 31
+}
+
 # M1091V55F: install terminal traps before first runtime child starts.
 coded_m1091v55f_install_signal_traps
 
