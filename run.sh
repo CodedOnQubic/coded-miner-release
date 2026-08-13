@@ -141,7 +141,7 @@ coded_m1091v51c_print_effective_status() {
 }
 # M1091V51B_MACOS_BETA_PUBLIC_CONSOLE_FLOW
 coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
-  local root pkg console bin worker wallet threads pool_url run_log miner_pid
+  local root pkg console bin prestart launch_entry worker wallet threads pool_url run_log miner_pid
 
   root="/tmp/coded-m1091v50h-runsh-beta/pkg"
 
@@ -177,19 +177,29 @@ coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
   do
     console="$pkg/coded-public-console.py"
     bin="$pkg/coded-miner"
+    prestart="$pkg/coded-hardware-tune-prestart.sh"
 
     if [ -x "$bin" ]; then
       cd "$pkg" || return 1
+
+      # Beta lifecycle:
+      # prestart PID -> exec coded-miner -> same PID.
+      # Latest/public does not enter this macOS Beta helper path.
+      launch_entry="$bin"
+      if [ -x "$prestart" ]; then
+        launch_entry="$prestart"
+      fi
 
       run_log="${TMPDIR:-/tmp}/coded-miner-beta-${worker}.log"
       : > "$run_log" 2>/dev/null || run_log="/tmp/coded-miner-beta-${worker}.log"
       : > "$run_log" 2>/dev/null || true
 
       coded_m1091v54k_debug "[M1091V51B] starting macOS beta public console flow worker=$worker commit=${CODED_RELEASE_COMMIT:-unknown}"
-      coded_m1091v54k_debug "[M1091V51B] beta bin=$bin"
+      coded_m1091v54k_debug "[M1091V51B] beta productive_bin=$bin"
+      coded_m1091v54k_debug "[M1091V51B] beta launch_entry=$launch_entry"
       coded_m1091v54k_debug "[M1091V51B] beta log=$run_log"
 
-      "$bin" > "$run_log" 2>&1 &
+      "$launch_entry" > "$run_log" 2>&1 &
       miner_pid="$!"
 
       if [ -f "$console" ] && command -v python3 >/dev/null 2>&1; then
