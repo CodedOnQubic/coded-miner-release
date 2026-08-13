@@ -1651,6 +1651,287 @@ if [ ! -f "$INSTALL_DIR/coded-runtime-sidecar.py" ]; then
 fi
 
 
+# M1091V55G_MAC_BETA_PYTHON_TLS_CA
+#
+# Keep canonical HTTPS analytics transport. Some macOS Python
+# installations do not automatically use Apple's system trust bundle,
+# while curl does. Resolve an explicit CA bundle for urllib-based
+# Hardware Tune reporting and Analytics2 sidecar uploads.
+coded_m1091v55g_prepare_macos_beta_python_tls() {
+  local ca=""
+  local candidate=""
+  local generated=""
+  local tmp_ca=""
+
+  [ "$PLATFORM" = "macos-arm64" ] || return 0
+  [ "${CODED_RELEASE_CHANNEL:-latest}" = "beta" ] || return 0
+
+  if [ -n "${SSL_CERT_FILE:-}" ] &&
+     [ -r "${SSL_CERT_FILE:-}" ]
+  then
+    ca="$SSL_CERT_FILE"
+  fi
+
+  if [ -z "$ca" ] &&
+     command -v python3 >/dev/null 2>&1
+  then
+    candidate="$(
+      python3 - <<'PYCA' 2>/dev/null || true
+try:
+    import certifi
+    print(certifi.where())
+except Exception:
+    pass
+PYCA
+    )"
+
+    if [ -n "$candidate" ] &&
+       [ -r "$candidate" ]
+    then
+      ca="$candidate"
+    fi
+  fi
+
+  if [ -z "$ca" ]; then
+    for candidate in \
+      /etc/ssl/cert.pem \
+      /private/etc/ssl/cert.pem
+    do
+      if [ -r "$candidate" ]; then
+        ca="$candidate"
+        break
+      fi
+    done
+  fi
+
+  if [ -z "$ca" ] &&
+     command -v security >/dev/null 2>&1
+  then
+    generated="$STATE_DIR/macos-system-roots.pem"
+    tmp_ca="${generated}.tmp.$$"
+
+    rm -f "$tmp_ca"
+
+    if security find-certificate \
+         -a \
+         -p \
+         /System/Library/Keychains/SystemRootCertificates.keychain \
+         > "$tmp_ca" 2>/dev/null &&
+       [ -s "$tmp_ca" ]
+    then
+      mv "$tmp_ca" "$generated"
+      ca="$generated"
+    else
+      rm -f "$tmp_ca"
+    fi
+  fi
+
+  if [ -n "$ca" ]; then
+    export SSL_CERT_FILE="$ca"
+
+    coded_m1091v54k_debug \
+      "[M1091V55G] mac_beta_python_ca=$SSL_CERT_FILE"
+  else
+    coded_m1091v54k_debug \
+      "[M1091V55G] mac_beta_python_ca=UNAVAILABLE"
+  fi
+
+  # Hardware Tune reporter and Analytics sidecar must use the same
+  # canonical HTTPS API authority.
+  export CODED_POOL_API_URL="$API_ROOT"
+  export POOL_API_URL="$API_ROOT"
+  export CODED_POOL_API_BASE="$API_ROOT"
+
+  if command -v python3 >/dev/null 2>&1; then
+    if python3 - "$API_ROOT" <<'PYTLS' >/dev/null 2>&1
+import sys
+import urllib.request
+
+base = sys.argv[1].rstrip("/")
+with urllib.request.urlopen(
+    base + "/admin/release/channel-status",
+    timeout=8,
+) as response:
+    if int(response.status) < 200 or int(response.status) >= 400:
+        raise SystemExit(2)
+PYTLS
+    then
+      coded_m1091v54k_debug \
+        "[M1091V55G] mac_beta_python_https=PASS"
+    else
+      coded_m1091v54k_debug \
+        "[M1091V55G] mac_beta_python_https=FAIL"
+    fi
+  fi
+}
+
+
+# M1091V55H_MAC_BETA_RUNNER_INTEGRATED_HARDWARE_TUNE
+#
+# Important ordering:
+#
+#   Hardware Tune
+#       -> selected THREADS
+#       -> BPP9000 L vector
+#       -> productive coded-miner
+#
+# BPP9000 requires len(L_VALUES) == worker_count, therefore tuning
+# cannot safely happen after the BPP9000 activation has already built
+# its worker vector.
+#
+# This invokes the exact packaged Hardware Tune v2 controller used by
+# coded-hardware-tune-prestart.sh, but integrates its selected result
+# into the common public runner before BPP9000 activation.
+coded_m1091v55h_run_macos_beta_hardware_tune() {
+  local manifest=""
+  local prestart=""
+  local tune_root=""
+  local profile=""
+  local run_state=""
+  local failure=""
+  local tune_log=""
+  local tune_env=""
+  local probe=""
+  local task=""
+  local max_threads=""
+  local tune_rc=0
+  local selected_threads=""
+
+  [ "$PLATFORM" = "macos-arm64" ] || return 0
+  [ "${CODED_RELEASE_CHANNEL:-latest}" = "beta" ] || return 0
+
+  manifest="$INSTALL_DIR/release_manifest.json"
+  prestart="$INSTALL_DIR/coded-hardware-tune-prestart.sh"
+  probe="$INSTALL_DIR/hardware_tune/probe_adapter.py"
+  task="$INSTALL_DIR/task_bpp9000.bin"
+
+  [ -f "$manifest" ] || return 0
+
+  if ! grep -Eq \
+    '"entrypoint"[[:space:]]*:[[:space:]]*"coded-hardware-tune-prestart.sh"' \
+    "$manifest"
+  then
+    return 0
+  fi
+
+  if [ ! -x "$prestart" ] ||
+     [ ! -f "$probe" ] ||
+     [ ! -f "$task" ]
+  then
+    coded_m1091v54k_debug \
+      "[M1091V55H] hardware_tune=fallback reason=package_assets_missing"
+
+    return 0
+  fi
+
+  if [ -e "$INSTALL_DIR/coded-miner-runtime" ]; then
+    echo \
+      "ERROR: legacy coded-miner-runtime present in macOS Beta package"
+
+    return 89
+  fi
+
+  max_threads="${CODED_HARDWARE_TUNE_MAX_THREADS:-$THREADS}"
+
+  case "$max_threads" in
+    ''|*[!0-9]*|0)
+      max_threads="$THREADS"
+      ;;
+  esac
+
+  export CODED_HARDWARE_TUNE_MAX_THREADS="$max_threads"
+
+  tune_root="${CODED_HARDWARE_TUNE_STATE_DIR:-$HOME/.coded/hardware-tune}"
+  profile="$tune_root/profile.json"
+  run_state="$tune_root/latest-run.json"
+  failure="$tune_root/failure.json"
+  tune_log="$tune_root/tuning.log"
+  tune_env="${TMPDIR:-/tmp}/coded-runsh-hardware-tune.$$.env"
+
+  mkdir -p "$tune_root"
+  touch "$tune_log"
+
+  export CODED_HARDWARE_TUNE_TASK="$task"
+  export CODED_BPP9000_TASK_FILE_PATH="$task"
+  export CODED_HARDWARE_TUNE_PROBE_DIR="$INSTALL_DIR"
+
+  coded_ui_loader 62 "Tuning Apple Silicon runtime"
+
+  : > "$tune_env"
+
+  PYTHONPATH="$INSTALL_DIR${PYTHONPATH:+:$PYTHONPATH}" \
+  CODED_WORKER_NAME="$WORKER_SAFE" \
+  CODED_RIG_ID="$WORKER_SAFE" \
+  CODED_POOL_API_URL="$API_ROOT" \
+  POOL_API_URL="$API_ROOT" \
+  python3 -m hardware_tune.cli \
+    --miner "$MINER_EXE" \
+    --profile "$profile" \
+    --state "$run_state" \
+    --failure-cache "$failure" \
+    --runtime-contract "$manifest" \
+    --package-dir "$INSTALL_DIR" \
+    --backends neon \
+    --probe "python3 $probe" \
+    --duration-ms 3000 \
+    --repetitions 1 \
+    --max-threads "$max_threads" \
+    --budget-ms 70000 \
+    --failure-ttl-seconds 21600 \
+    --format shell \
+    > "$tune_env" \
+    2>> "$tune_log" ||
+    tune_rc="$?"
+
+  while IFS= read -r line
+  do
+    case "$line" in
+      export\ CODED_HARDWARE_TUNE_*=*)
+        eval "$line"
+        ;;
+    esac
+  done < "$tune_env"
+
+  rm -f "$tune_env"
+
+  selected_threads="${CODED_HARDWARE_TUNE_THREADS:-}"
+
+  if [ "${CODED_HARDWARE_TUNE_BACKEND:-}" = "neon" ]; then
+    case "$selected_threads" in
+      ''|*[!0-9]*|0)
+        selected_threads=""
+        ;;
+    esac
+  else
+    selected_threads=""
+  fi
+
+  if [ -n "$selected_threads" ]; then
+    THREADS="$selected_threads"
+    CODED_THREADS="$selected_threads"
+
+    BACKEND="arm-neon"
+    SELECTED_BACKEND="arm-neon"
+
+    export THREADS
+    export CODED_THREADS
+    export BACKEND
+    export CODED_BACKEND="arm-neon"
+    export CODED_KERNEL_BACKEND="arm-neon"
+
+    coded_m1091v54k_debug \
+      "[M1091V55H] hardware_tune=applied backend=neon threads=$THREADS rc=$tune_rc"
+  else
+    coded_m1091v54k_debug \
+      "[M1091V55H] hardware_tune=fallback keep_threads=$THREADS rc=$tune_rc"
+  fi
+
+  coded_ui_loader 68 "Hardware tuning complete"
+
+  return 0
+}
+
+
 # M1091P055_MACOS_BETA_BPP9000_RUNTIME_AUTHORITY
 #
 # macOS Anthill Beta runtime contract.
@@ -1850,6 +2131,9 @@ PYN
 
   return 0
 }
+
+coded_m1091v55g_prepare_macos_beta_python_tls
+coded_m1091v55h_run_macos_beta_hardware_tune
 
 coded_m1091p055_activate_macos_beta_bpp9000 || {
   echo \
