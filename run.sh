@@ -1873,11 +1873,11 @@ coded_m1091v55h_run_macos_beta_hardware_tune() {
     --package-dir "$INSTALL_DIR" \
     --backends neon \
     --probe "python3 $probe" \
-    --duration-ms 3000 \
-    --repetitions 1 \
+    --duration-ms "${CODED_HARDWARE_TUNE_DURATION_MS:-3000}" \
+    --repetitions "${CODED_HARDWARE_TUNE_REPETITIONS:-1}" \
     --max-threads "$max_threads" \
-    --budget-ms 70000 \
-    --failure-ttl-seconds 21600 \
+    --budget-ms "${CODED_HARDWARE_TUNE_BUDGET_MS:-90000}" \
+    --failure-ttl-seconds "${CODED_HARDWARE_TUNE_FAILURE_TTL_SECONDS:-300}" \
     --format shell \
     > "$tune_env" \
     2>> "$tune_log" ||
