@@ -1,0 +1,37 @@
+name: V5 Public Runtime Bridge Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'run.sh'
+      - 'runtime/coded-public-console-v5.py'
+      - 'runtime/coded-v5-sidecar-bridge.py'
+      - 'tests/v5_public_runtime_bridge_contract_test.py'
+      - '.github/workflows/v5-public-runtime-bridge-gate.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v5-public-runtime:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Syntax
+        run: |
+          set -Eeuo pipefail
+          python3 -m py_compile runtime/coded-public-console-v5.py runtime/coded-v5-sidecar-bridge.py runtime/run-v5-patch.py tests/v5_public_runtime_bridge_contract_test.py
+          bash -n run.sh
+      - name: V5 public runtime bridge contract
+        run: |
+          set -Eeuo pipefail
+          python3 tests/v5_public_runtime_bridge_contract_test.py
+          python3 runtime/run-v5-patch.py --self-test
+          echo 'v5_public_runtime_bridge_gate=GREEN'
