@@ -80,7 +80,10 @@ def main() -> int:
     assert "M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE" in run_text
     assert "coded-miner-macos" in run_text
     assert '--package "$pkg" --miner-pid "$miner_pid"' in run_text
-    assert 'launch_entry="$prestart"' not in run_text
+    # The obsolete assignment is present exactly once only as a negative grep
+    # guard against generated-runner regression; it is not executable code.
+    assert run_text.count('launch_entry="$prestart"') == 1
+    assert '! grep -Fq \'launch_entry="$prestart"\'' in run_text
     assert 'coded_ui_loader 100 "Applying update"' in run_text
 
     subprocess.run(["bash", "-n", str(RUN_SH)], check=True)
