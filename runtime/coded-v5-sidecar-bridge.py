@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Compatibility bridge for already-built Anthill V5 macOS Beta packages.
 
-Runs the packaged runtime sidecar in-process while adding only exact build
-identity (full source commit + SHA256 of the productive binary) to outgoing
-analytics JSON. It never changes mining counters, solutions or experiments.
+The packaged macOS launcher may run Hardware Tune before it execs the final
+productive binary. This bridge follows that exact launcher PID, waits until the
+PID has exec'd one unambiguous packaged productive binary, hashes those bytes,
+and only then starts the packaged Analytics sidecar with exact build identity.
+It never changes mining counters, solutions or experiment state.
 """
 
 from __future__ import annotations
@@ -15,7 +17,9 @@ import os
 from pathlib import Path
 import re
 import runpy
+import shlex
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -56,6 +60,83 @@ def full_commit(package: Path) -> str:
         if HEX40.fullmatch(value):
             return value
     return ""
+
+
+def productive_candidates(package: Path) -> dict[Path, str]:
+    names = {
+        "coded-miner-neon": "neon",
+        "coded-miner-metal": "metal",
+        "coded-miner-hybrid": "hybrid",
+        "coded-miner": "neon",
+    }
+    out: dict[Path, str] = {}
+    for name, backend in names.items():
+        path = package / name
+        try:
+            if path.is_file():
+                out[path.resolve()] = backend
+        except Exception:
+            continue
+    return out
+
+
+def process_command(pid: int) -> str:
+    try:
+        return subprocess.check_output(
+            ["ps", "-p", str(pid), "-o", "command="],
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=2,
+        ).strip()
+    except Exception:
+        return ""
+
+
+def resolve_productive_binary(package: Path, pid: int, timeout_sec: int) -> tuple[Path, str] | None:
+    candidates = productive_candidates(package)
+    if not candidates:
+        return None
+
+    deadline = time.monotonic() + max(1, timeout_sec)
+    while time.monotonic() < deadline:
+        if not pid_alive(pid):
+            return None
+
+        command = process_command(pid)
+        if command:
+            try:
+                argv = shlex.split(command)
+            except Exception:
+                argv = command.split()
+
+            # The launcher uses exec, so argv[0] becomes the selected productive
+            # binary. Resolve exact package paths; never infer from backend text.
+            if argv:
+                try:
+                    first = Path(argv[0]).expanduser().resolve()
+                except Exception:
+                    first = Path(argv[0])
+                if first in candidates:
+                    return first, candidates[first]
+
+            # Some ps implementations include an interpreter/loader first. An
+            # exact candidate path anywhere in argv is still an unambiguous PID
+            # executable identity for this packaged process.
+            matches: list[tuple[Path, str]] = []
+            for token in argv:
+                try:
+                    token_path = Path(token).expanduser().resolve()
+                except Exception:
+                    continue
+                if token_path in candidates:
+                    matches.append((token_path, candidates[token_path]))
+            unique = {(str(path), backend) for path, backend in matches}
+            if len(unique) == 1:
+                path_text, backend = next(iter(unique))
+                return Path(path_text), backend
+
+        time.sleep(0.5)
+    return None
 
 
 def patch_dict(value: dict, *, commit: str, digest: str) -> dict:
@@ -140,33 +221,51 @@ def stop_when_miner_exits(pid: int) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--sidecar", required=True)
-    parser.add_argument("--binary", required=True)
+    parser.add_argument("--package", required=True)
     parser.add_argument("--miner-pid", type=int, required=True)
+    parser.add_argument("--resolve-timeout-sec", type=int, default=330)
     args = parser.parse_args()
 
     sidecar = Path(args.sidecar).resolve()
-    binary = Path(args.binary).resolve()
+    package = Path(args.package).resolve()
     if not sidecar.is_file():
         print(f"{MARKER}=FAIL reason=sidecar_missing path={sidecar}", file=sys.stderr)
         return 70
-    if not binary.is_file():
-        print(f"{MARKER}=FAIL reason=binary_missing path={binary}", file=sys.stderr)
+    if not package.is_dir():
+        print(f"{MARKER}=FAIL reason=package_missing path={package}", file=sys.stderr)
         return 71
 
-    digest = sha256_file(binary).lower()
-    commit = full_commit(sidecar.parent)
-    if not HEX64.fullmatch(digest):
-        print(f"{MARKER}=FAIL reason=binary_sha_invalid", file=sys.stderr)
-        return 72
+    commit = full_commit(package)
     if not HEX40.fullmatch(commit):
         print(f"{MARKER}=FAIL reason=source_commit_missing", file=sys.stderr)
+        return 72
+
+    resolved = resolve_productive_binary(package, args.miner_pid, args.resolve_timeout_sec)
+    if resolved is None:
+        print(
+            f"{MARKER}=FAIL reason=productive_binary_unresolved miner_pid={args.miner_pid}",
+            file=sys.stderr,
+        )
         return 73
+    binary, backend = resolved
+
+    digest = sha256_file(binary).lower()
+    if not HEX64.fullmatch(digest):
+        print(f"{MARKER}=FAIL reason=binary_sha_invalid", file=sys.stderr)
+        return 74
 
     os.environ["CODED_BINARY_SHA256"] = digest
+    os.environ["CODED_MINER_BINARY_SHA256"] = digest
+    os.environ["CODED_PRODUCTIVE_BINARY_SHA256"] = digest
+    os.environ["CODED_RUNTIME_PRODUCTIVE_BINARY_SHA256"] = digest
     os.environ["CODED_MINER_BINARY"] = str(binary)
     os.environ["CODED_RELEASE_COMMIT"] = commit
     os.environ["CODED_MINER_COMMIT"] = commit
     os.environ["GIT_COMMIT"] = commit
+    os.environ["CODED_SELECTED_BACKEND"] = backend
+    os.environ["CODED_KERNEL_BACKEND"] = backend
+    os.environ["CODED_BACKEND"] = backend
+    os.environ["CODED_BINARY_VARIANT"] = backend
     install_transport_patch(commit=commit, digest=digest)
 
     threading.Thread(
@@ -175,7 +274,11 @@ def main() -> int:
         daemon=True,
     ).start()
 
-    print(f"{MARKER}=STARTED commit={commit} binary_sha256={digest} miner_pid={args.miner_pid}", flush=True)
+    print(
+        f"{MARKER}=STARTED commit={commit} binary={binary.name} "
+        f"backend={backend} binary_sha256={digest} miner_pid={args.miner_pid}",
+        flush=True,
+    )
     runpy.run_path(str(sidecar), run_name="__main__")
     return 0
 
