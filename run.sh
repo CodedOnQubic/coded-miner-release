@@ -127,8 +127,9 @@ fi''',
 mac_helper = r'''# M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE
 coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
   local root pkg console launcher bin sidecar worker wallet threads pool_url mining_pool
-  local run_log analytics_log miner_pid sidecar_pid rc backend_raw backend_arg identity_bin
-  local bridge bridge_tmp bridge_url
+  local run_log analytics_log miner_pid sidecar_pid rc backend_raw backend_arg
+  local bridge bridge_tmp bridge_url tail_pid
+  local -a args
 
   root="/tmp/coded-m1091v50h-runsh-beta/pkg"
 
@@ -188,33 +189,26 @@ coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
       : > "$analytics_log" 2>/dev/null || analytics_log="/tmp/coded-miner-beta-${worker}-analytics.log"
       : > "$analytics_log" 2>/dev/null || true
 
-      coded_m1091v54k_debug "[M1091V65] mac beta package=$pkg backend=$backend_arg worker=$worker"
+      coded_m1091v54k_debug "[M1091V65] mac beta package=$pkg requested_backend=$backend_arg worker=$worker"
       coded_m1091v54k_debug "[M1091V65] mac beta log=$run_log analytics_log=$analytics_log"
 
-      identity_bin=""
       if [ -x "$launcher" ]; then
-        case "$backend_arg" in
-          neon) identity_bin="$pkg/coded-miner-neon" ;;
-          metal) identity_bin="$pkg/coded-miner-metal" ;;
-          hybrid) identity_bin="$pkg/coded-miner-hybrid" ;;
-          *) identity_bin="" ;;
-        esac
-
         args=("--backend=$backend_arg" "--pool" "$mining_pool" "--wallet" "$wallet" "--worker" "$worker")
         [ -n "$threads" ] && args+=("--threads" "$threads")
         "$launcher" "${args[@]}" > "$run_log" 2>&1 &
       else
-        identity_bin="$bin"
         args=("--pool" "$mining_pool" "--wallet" "$wallet" "--worker" "$worker")
         [ -n "$threads" ] && args+=("--threads" "$threads")
         "$bin" "${args[@]}" > "$run_log" 2>&1 &
       fi
       miner_pid="$!"
 
-      # Current 95450ff packages predate the exact Analytics2 binary-SHA
-      # transport patch. Bridge only when the productive binary is unambiguous.
+      # Current 95450ff packages predate the exact Analytics2 runtime-SHA
+      # transport patch. The bridge follows this same PID across launcher exec,
+      # resolves the exact final packaged productive binary, hashes its bytes,
+      # and only then starts Analytics. No requested-backend hash guessing.
       sidecar_pid=""
-      if [ -f "$sidecar" ] && [ -n "$identity_bin" ] && [ -f "$identity_bin" ] && command -v python3 >/dev/null 2>&1; then
+      if [ -f "$sidecar" ] && command -v python3 >/dev/null 2>&1; then
         bridge="$pkg/coded-v5-sidecar-bridge.py"
         bridge_tmp="${bridge}.tmp.$$"
         bridge_url="https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/runtime/coded-v5-sidecar-bridge.py"
@@ -223,12 +217,8 @@ coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
         then
           mv -f "$bridge_tmp" "$bridge"
           chmod 0755 "$bridge" 2>/dev/null || true
-          export CODED_SELECTED_BACKEND="$backend_arg"
-          export CODED_KERNEL_BACKEND="$backend_arg"
-          export CODED_BACKEND="$backend_arg"
-          export CODED_BINARY_VARIANT="$backend_arg"
           PYTHONPATH="$pkg${PYTHONPATH:+:$PYTHONPATH}" \
-            python3 "$bridge" --sidecar "$sidecar" --binary "$identity_bin" --miner-pid "$miner_pid" \
+            python3 "$bridge" --sidecar "$sidecar" --package "$pkg" --miner-pid "$miner_pid" \
             >> "$analytics_log" 2>&1 &
           sidecar_pid="$!"
         else
@@ -285,6 +275,7 @@ grep -Fq 'M1091V65_SINGLE_UPDATE_LOADER' "$tmp_runner"
 grep -Fq 'M1091V65_SINGLE_UPDATE_FALLBACK' "$tmp_runner"
 grep -Fq 'M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE' "$tmp_runner"
 grep -Fq 'coded-miner-macos' "$tmp_runner"
+grep -Fq -- '--package "$pkg" --miner-pid "$miner_pid"' "$tmp_runner"
 ! grep -Fq 'launch_entry="$prestart"' "$tmp_runner"
 grep -Fq '0c5e9e42c6d86c320af62f4125ca85b2446f2b098893fd6521bcf66c22f7f00a' "$tmp_runner"
 ! grep -Fq '403e24225f5b0512d0cbf49758fed9a01e7334d3cea565ad6c5e82420b713226' "$tmp_runner"
