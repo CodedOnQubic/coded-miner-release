@@ -116,7 +116,7 @@ def backend_label(raw: str, platform: str) -> str:
 
 def epoch_or_fallback(value: str) -> str:
     value = (value or "").strip()
-    if value and value.lower() not in ("auto", "none", "null", "unknown"):
+    if value and value.lower() not in ("auto", "none", "null", "unknown", "?"):
         return value
     try:
         import calendar
