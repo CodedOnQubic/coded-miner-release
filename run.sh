@@ -2,12 +2,22 @@
 # M1091V64_SHARED_RUNSH_V5_AUTOUPDATE_AUTHORITY
 # M1091V65_SINGLE_PUBLIC_UPDATE_TRANSITION
 # M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE
+# M1091V66_MAC_AUTO_REQUEST_AUTHORITY
 #
-# One public Linux/macOS lifecycle, one updater.  The proven shared runner is
+# One public Linux/macOS lifecycle, one updater. The proven shared runner is
 # pinned and patched with the V5 compatibility adapter before execution.
 # No experiment is started here and no second updater/daemon is introduced.
 
 set -Eeuo pipefail
+
+# Freeze the caller's backend request before the legacy/core runner writes any
+# detected/selected execution labels. On Apple Silicon, no explicit backend in
+# the public one-liner means AUTO. CODED_SELECTED_BACKEND/CODED_KERNEL_BACKEND
+# are execution outputs and are never request authority.
+if [[ -z "${CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT+x}" ]]; then
+  CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT="${CODED_HARDWARE_TUNE_REQUESTED_BACKEND:-${BACKEND:-auto}}"
+  export CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT
+fi
 
 CORE_COMMIT="d8ddc3f38a105233a6327920373a3ebb2939a55f"
 CORE_URL="https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/${CORE_COMMIT}/run.sh"
@@ -162,7 +172,11 @@ coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
   export CODED_BUILD_TARGET="macos-arm64"
   export CODED_PLATFORM="macos-arm64"
 
-  backend_raw="${CODED_SELECTED_BACKEND:-${CODED_KERNEL_BACKEND:-${CODED_BACKEND:-${BACKEND:-auto}}}}"
+  # Request authority is the original public caller intent, frozen before the
+  # core runner can emit legacy detected/selected backend labels. With no
+  # backend in the Mac one-liner this remains AUTO until Hardware Tune V5 makes
+  # a correctness-gated local selection.
+  backend_raw="${CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT:-${CODED_HARDWARE_TUNE_REQUESTED_BACKEND:-${BACKEND:-auto}}}"
   case "$(printf '%s' "$backend_raw" | tr '[:upper:]' '[:lower:]')" in
     *hybrid*|*neon+metal*) backend_arg="hybrid" ;;
     *metal*) backend_arg="metal" ;;
@@ -203,10 +217,9 @@ coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
       fi
       miner_pid="$!"
 
-      # Current 95450ff packages predate the exact Analytics2 runtime-SHA
-      # transport patch. The bridge follows this same PID across launcher exec,
-      # resolves the exact final packaged productive binary, hashes its bytes,
-      # and only then starts Analytics. No requested-backend hash guessing.
+      # The bridge follows this same PID across launcher exec, resolves the
+      # exact final packaged productive binary, hashes its bytes, and only then
+      # starts Analytics. No requested-backend hash guessing.
       sidecar_pid=""
       if [ -f "$sidecar" ] && command -v python3 >/dev/null 2>&1; then
         bridge="$pkg/coded-v5-sidecar-bridge.py"
@@ -276,6 +289,7 @@ grep -Fq 'M1091V65_SINGLE_UPDATE_FALLBACK' "$tmp_runner"
 grep -Fq 'M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE' "$tmp_runner"
 grep -Fq 'coded-miner-macos' "$tmp_runner"
 grep -Fq -- '--package "$pkg" --miner-pid "$miner_pid"' "$tmp_runner"
+grep -Fq 'CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT' "$tmp_runner"
 ! grep -Fq 'launch_entry="$prestart"' "$tmp_runner"
 grep -Fq '0c5e9e42c6d86c320af62f4125ca85b2446f2b098893fd6521bcf66c22f7f00a' "$tmp_runner"
 ! grep -Fq '403e24225f5b0512d0cbf49758fed9a01e7334d3cea565ad6c5e82420b713226' "$tmp_runner"
