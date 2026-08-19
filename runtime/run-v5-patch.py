@@ -113,7 +113,7 @@ for key in ("source_commit","release_commit","commit","git_commit","miner_commit
 PYCOMMIT
 )"
     else
-      value="$(grep -Eo '"'"'"(source_commit|release_commit|commit|git_commit|miner_commit)"'"'"[[:space:]]*:[[:space:]]*"'"'"[0-9a-fA-F]{7,40}"'"'"' "$mf" 2>/dev/null | head -1 | sed -E 's/.*"'"'"([0-9a-fA-F]{7,40})"'"'".*/\1/' | tr '[:upper:]' '[:lower:]' || true)"
+      value="$(grep -Eo '"(source_commit|release_commit|commit|git_commit|miner_commit)"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{7,40}"' "$mf" 2>/dev/null | head -1 | sed -E 's/.*"([0-9a-fA-F]{7,40})".*/\1/' | tr '[:upper:]' '[:lower:]' || true)"
     fi
 
     if printf '%s' "$value" | grep -Eq '^[0-9a-f]{7,40}$'; then
