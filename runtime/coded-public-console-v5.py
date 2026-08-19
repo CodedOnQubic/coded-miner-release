@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Canonical public CODED console for Anthill V5.
 
-SOLS is fail-closed Qubic NETWORK_ACCEPTED truth.  Local score/pass counters are
-never rendered as accepted solutions.
+SOLS is fail-closed Qubic NETWORK_ACCEPTED truth. Local score/pass counters are
+never rendered as accepted solutions. On macOS the requested backend (including
+AUTO) is kept separate from the effective native execution backend so Hybrid
+NEON+Metal is visible as soon as the launcher or Analytics2 frame reports it.
 """
 from __future__ import annotations
 
@@ -58,8 +60,6 @@ def first_int(frame: Dict[str, str], *names: str) -> int:
 
 
 def network_accepted(frame: Dict[str, str]) -> int:
-    # Deliberately forbidden: total_pass, solutions, sols, real300, real310,
-    # real321, accepted, accepted_total and total_accepted.
     return first_int(
         frame,
         "network_accepted_total",
@@ -94,21 +94,45 @@ def fmt_rate(value: float) -> str:
     return text.replace(".", ",")
 
 
-def backend_label(raw: str, platform: str) -> str:
-    value = (raw or "").lower()
-    host = (platform or "").lower()
-    if "hybrid" in value or "neon+metal" in value:
-        return "NEON/METAL"
+def normalize_backend(raw: str) -> str:
+    value = (raw or "").strip().lower().replace("_", "-")
+    if "hybrid" in value or "neon+metal" in value or "neon-metal" in value:
+        return "hybrid"
     if "metal" in value:
-        return "METAL"
+        return "metal"
     if "neon" in value:
-        return "NEON"
+        return "neon"
     if "cuda" in value:
-        return "CUDA"
+        return "cuda"
     if "avx512" in value or "avx-512" in value:
-        return "AVX512"
+        return "avx512"
     if "avx2" in value:
+        return "avx2"
+    if value in ("auto", "default"):
+        return "auto"
+    return value
+
+
+def backend_label(raw: str, platform: str, components: str = "") -> str:
+    value = normalize_backend(raw)
+    host = (platform or "").lower()
+    comp = (components or "").lower().replace(" ", "")
+    if value == "hybrid":
+        if "neon" in comp and "metal" in comp:
+            return "HYBRID (NEON+METAL)"
+        return "HYBRID"
+    if value == "metal":
+        return "METAL"
+    if value == "neon":
+        return "NEON"
+    if value == "cuda":
+        return "CUDA"
+    if value == "avx512":
+        return "AVX512"
+    if value == "avx2":
         return "AVX2"
+    if value == "auto" and (host.startswith("macos-arm") or host.startswith("darwin")):
+        return "AUTO→HYBRID (NEON+METAL)"
     if "arm" in value or host.startswith("macos-arm") or host.startswith("darwin"):
         return "ARM"
     return "SCALAR"
@@ -144,8 +168,10 @@ class PublicState:
         self.worker = env_any("CODED_WORKER_NAME", "WORKER", "RIG_ID", "CODED_RIG_ID", default="coded-worker")
         self.wallet = env_any("CODED_WALLET", "WALLET", "QUBIC_WALLET", default="not set")
         self.threads = env_any("CODED_THREADS", "THREADS", default="?")
-        self.env_backend = env_any("CODED_SELECTED_BACKEND", "CODED_KERNEL_BACKEND", "CODED_BACKEND", "BACKEND", default="")
+        self.requested_backend = env_any("CODED_SELECTED_BACKEND", "CODED_KERNEL_BACKEND", "CODED_BACKEND", "BACKEND", default="auto")
+        self.effective_backend = ""
         self.frame_backend = ""
+        self.components = env_any("CODED_HYBRID_COMPONENT_BACKENDS", default="")
         self.platform = env_any("CODED_PLATFORM", default=sys.platform)
         self.epoch = epoch_or_fallback(env_any("QUBIC_EPOCH", "CODED_EPOCH", "CODED_PUBLIC_EPOCH", default="?"))
         self.printed_header = False
@@ -153,15 +179,27 @@ class PublicState:
         self.latest_frame: Optional[Dict[str, str]] = None
         self.last_emit = 0.0
 
+    def backend_raw(self) -> str:
+        # Native frame execution truth wins, then launcher effective backend.
+        # AUTO is only a request and must never mask a later Hybrid selection.
+        return self.frame_backend or self.effective_backend or self.requested_backend
+
     def backend(self) -> str:
-        return backend_label(self.env_backend or self.frame_backend, self.platform)
+        return backend_label(self.backend_raw(), self.platform, self.components)
 
     def update_line(self, line: str) -> None:
         data = kv_parse(line)
         self.worker = data.get("worker") or self.worker
         self.threads = data.get("threads") or self.threads
         self.platform = data.get("platform") or self.platform
-        self.frame_backend = data.get("backend") or self.frame_backend
+        self.requested_backend = data.get("requested_backend") or self.requested_backend
+        self.effective_backend = data.get("effective_backend") or self.effective_backend
+        if data.get("hybrid_component_backends"):
+            self.components = data["hybrid_component_backends"]
+        elif data.get("active_backends"):
+            self.components = data["active_backends"]
+        if "[CODED_ANALYTICS_FRAME]" in line:
+            self.frame_backend = data.get("backend") or self.frame_backend
         if data.get("epoch"):
             self.epoch = epoch_or_fallback(data["epoch"])
 
@@ -170,6 +208,11 @@ class PublicState:
         self.threads = frame.get("threads") or self.threads
         self.platform = frame.get("platform") or self.platform
         self.frame_backend = frame.get("backend") or self.frame_backend
+        self.components = (
+            frame.get("active_backends")
+            or frame.get("hybrid_component_backends")
+            or self.components
+        )
         self.epoch = epoch_or_fallback(frame.get("epoch") or self.epoch)
         self.latest_frame = frame
 
