@@ -7,8 +7,10 @@ import calendar
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -38,6 +40,37 @@ def main() -> int:
         assert console.epoch_or_fallback("226") == "226"
     finally:
         console.time.time = original_time
+
+    # AUTO is only a request on Apple Silicon. The productive Hybrid handoff and
+    # then native frame identity must win over it in the public console.
+    original_env = dict(os.environ)
+    try:
+        os.environ["CODED_SELECTED_BACKEND"] = "auto"
+        os.environ["CODED_PLATFORM"] = "macos-arm64"
+        state = console.PublicState()
+        assert state.backend() == "AUTO→HYBRID (NEON+METAL)"
+        state.update_line(
+            "CODED_MACOS_LAUNCHER=PASS requested_backend=auto "
+            "effective_backend=hybrid hybrid_component_backends=neon,metal"
+        )
+        assert state.backend() == "HYBRID (NEON+METAL)"
+        state.update_line(
+            "[CODED_ANALYTICS_FRAME] backend=hybrid "
+            "active_backends=neon,metal"
+        )
+        assert state.backend() == "HYBRID (NEON+METAL)"
+
+        explicit = console.PublicState()
+        explicit.requested_backend = "neon"
+        explicit.effective_backend = "neon"
+        explicit.frame_backend = ""
+        assert explicit.backend() == "NEON"
+        explicit.requested_backend = "metal"
+        explicit.effective_backend = "metal"
+        assert explicit.backend() == "METAL"
+    finally:
+        os.environ.clear()
+        os.environ.update(original_env)
 
     bridge = load(BRIDGE, "coded_v5_sidecar_bridge_test")
     with tempfile.TemporaryDirectory() as tmp:
@@ -74,6 +107,34 @@ def main() -> int:
         assert frame["binary_sha256"] == expected
         assert frame["source_commit"] == COMMIT
 
+    # Public Mac one-liner and Analytics2 must share the exact same worker-bound
+    # miner log. This is the regression that made running Macs remain OFFLINE.
+    original_env = dict(os.environ)
+    try:
+        os.environ.pop("RUN_LOG", None)
+        os.environ.pop("CODED_RUN_LOG", None)
+        os.environ.pop("CODED_ANALYTICS_LOG", None)
+        os.environ["TMPDIR"] = "/tmp"
+        os.environ["CODED_WORKER_NAME"] = "maco"
+        log_path = bridge.resolve_miner_log("")
+        assert str(log_path) == "/tmp/coded-miner-beta-maco.log"
+        bridge.bind_public_runtime_identity(log_path)
+        assert os.environ["RUN_LOG"] == str(log_path)
+        assert os.environ["CODED_RUN_LOG"] == str(log_path)
+        assert os.environ["CODED_ANALYTICS_LOG"] == str(log_path)
+        assert os.environ["CODED_RIG_ID"] == "maco"
+
+        bridge.bind_backend_identity("hybrid")
+        assert os.environ["CODED_BACKEND"] == "hybrid"
+        assert os.environ["CODED_SELECTED_BACKEND"] == "hybrid"
+        assert os.environ["CODED_KERNEL_BACKEND"] == "hybrid"
+        assert os.environ["CODED_HYBRID_CPU_BACKEND"] == "neon"
+        assert os.environ["CODED_HYBRID_GPU_BACKEND"] == "metal"
+        assert os.environ["CODED_HYBRID_COMPONENT_BACKENDS"] == "neon,metal"
+    finally:
+        os.environ.clear()
+        os.environ.update(original_env)
+
     run_text = RUN_SH.read_text(encoding="utf-8")
     assert "M1091V65_SINGLE_UPDATE_LOADER" in run_text
     assert "M1091V65_SINGLE_UPDATE_FALLBACK" in run_text
@@ -86,6 +147,7 @@ def main() -> int:
     assert '! grep -Fq \'launch_entry="$prestart"\'' in run_text
     assert 'coded_ui_loader 100 "Applying update"' in run_text
 
+    subprocess.run([sys.executable, "-m", "py_compile", str(CONSOLE), str(BRIDGE)], check=True)
     subprocess.run(["bash", "-n", str(RUN_SH)], check=True)
     print("v5_public_runtime_bridge_contract=PASS")
     return 0
