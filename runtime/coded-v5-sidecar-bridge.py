@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Compatibility bridge for already-built Anthill V5 macOS Beta packages.
+"""Compatibility bridge for Anthill V5 macOS Beta packages.
 
 The packaged macOS launcher may run Hardware Tune before it execs the final
 productive binary. This bridge follows that exact launcher PID, waits until the
 PID has exec'd one unambiguous packaged productive binary, hashes those bytes,
 and only then starts the packaged Analytics sidecar with exact build identity.
+It also binds the public one-liner's real miner log into the sidecar so native
+CODED_ANALYTICS_FRAME records remain visible outside HiveOS.
 It never changes mining counters, solutions or experiment state.
 """
 
@@ -67,7 +69,7 @@ def productive_candidates(package: Path) -> dict[Path, str]:
         "coded-miner-neon": "neon",
         "coded-miner-metal": "metal",
         "coded-miner-hybrid": "hybrid",
-        "coded-miner": "neon",
+        "coded-miner": "unknown",
     }
     out: dict[Path, str] = {}
     for name, backend in names.items():
@@ -109,8 +111,6 @@ def resolve_productive_binary(package: Path, pid: int, timeout_sec: int) -> tupl
             except Exception:
                 argv = command.split()
 
-            # The launcher uses exec, so argv[0] becomes the selected productive
-            # binary. Resolve exact package paths; never infer from backend text.
             if argv:
                 try:
                     first = Path(argv[0]).expanduser().resolve()
@@ -119,9 +119,6 @@ def resolve_productive_binary(package: Path, pid: int, timeout_sec: int) -> tupl
                 if first in candidates:
                     return first, candidates[first]
 
-            # Some ps implementations include an interpreter/loader first. An
-            # exact candidate path anywhere in argv is still an unambiguous PID
-            # executable identity for this packaged process.
             matches: list[tuple[Path, str]] = []
             for token in argv:
                 try:
@@ -137,6 +134,54 @@ def resolve_productive_binary(package: Path, pid: int, timeout_sec: int) -> tupl
 
         time.sleep(0.5)
     return None
+
+
+def worker_name() -> str:
+    for name in ("CODED_WORKER_NAME", "CODED_WORKER", "WORKER", "CODED_RIG_ID", "RIG_ID"):
+        value = str(os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return "coded-worker"
+
+
+def resolve_miner_log(explicit: str) -> Path:
+    if explicit:
+        return Path(explicit).expanduser()
+    for name in ("RUN_LOG", "CODED_RUN_LOG", "CODED_ANALYTICS_LOG"):
+        value = str(os.environ.get(name) or "").strip()
+        if value:
+            return Path(value).expanduser()
+    tmpdir = str(os.environ.get("TMPDIR") or "/tmp").rstrip("/") or "/tmp"
+    return Path(tmpdir) / f"coded-miner-beta-{worker_name()}.log"
+
+
+def bind_public_runtime_identity(miner_log: Path) -> None:
+    log_text = str(miner_log)
+    os.environ["RUN_LOG"] = log_text
+    os.environ["CODED_RUN_LOG"] = log_text
+    os.environ["CODED_ANALYTICS_LOG"] = log_text
+
+    worker = worker_name()
+    os.environ.setdefault("CODED_WORKER", worker)
+    os.environ.setdefault("CODED_WORKER_NAME", worker)
+    os.environ.setdefault("CODED_RIG_ID", worker)
+
+
+def bind_backend_identity(backend: str) -> None:
+    if backend not in {"neon", "metal", "hybrid"}:
+        return
+    os.environ["CODED_SELECTED_BACKEND"] = backend
+    os.environ["CODED_KERNEL_BACKEND"] = backend
+    os.environ["CODED_BACKEND"] = backend
+    os.environ["CODED_BINARY_VARIANT"] = backend
+    if backend == "hybrid":
+        os.environ["CODED_HYBRID_CPU_BACKEND"] = "neon"
+        os.environ["CODED_HYBRID_GPU_BACKEND"] = "metal"
+        os.environ["CODED_HYBRID_COMPONENT_BACKENDS"] = "neon,metal"
+    else:
+        os.environ.pop("CODED_HYBRID_CPU_BACKEND", None)
+        os.environ.pop("CODED_HYBRID_GPU_BACKEND", None)
+        os.environ.pop("CODED_HYBRID_COMPONENT_BACKENDS", None)
 
 
 def patch_dict(value: dict, *, commit: str, digest: str) -> dict:
@@ -223,6 +268,7 @@ def main() -> int:
     parser.add_argument("--sidecar", required=True)
     parser.add_argument("--package", required=True)
     parser.add_argument("--miner-pid", type=int, required=True)
+    parser.add_argument("--miner-log", default="")
     parser.add_argument("--resolve-timeout-sec", type=int, default=330)
     args = parser.parse_args()
 
@@ -235,6 +281,9 @@ def main() -> int:
         print(f"{MARKER}=FAIL reason=package_missing path={package}", file=sys.stderr)
         return 71
 
+    miner_log = resolve_miner_log(args.miner_log)
+    bind_public_runtime_identity(miner_log)
+
     commit = full_commit(package)
     if not HEX40.fullmatch(commit):
         print(f"{MARKER}=FAIL reason=source_commit_missing", file=sys.stderr)
@@ -243,7 +292,7 @@ def main() -> int:
     resolved = resolve_productive_binary(package, args.miner_pid, args.resolve_timeout_sec)
     if resolved is None:
         print(
-            f"{MARKER}=FAIL reason=productive_binary_unresolved miner_pid={args.miner_pid}",
+            f"{MARKER}=FAIL reason=productive_binary_unresolved miner_pid={args.miner_pid} miner_log={miner_log}",
             file=sys.stderr,
         )
         return 73
@@ -262,10 +311,7 @@ def main() -> int:
     os.environ["CODED_RELEASE_COMMIT"] = commit
     os.environ["CODED_MINER_COMMIT"] = commit
     os.environ["GIT_COMMIT"] = commit
-    os.environ["CODED_SELECTED_BACKEND"] = backend
-    os.environ["CODED_KERNEL_BACKEND"] = backend
-    os.environ["CODED_BACKEND"] = backend
-    os.environ["CODED_BINARY_VARIANT"] = backend
+    bind_backend_identity(backend)
     install_transport_patch(commit=commit, digest=digest)
 
     threading.Thread(
@@ -276,7 +322,8 @@ def main() -> int:
 
     print(
         f"{MARKER}=STARTED commit={commit} binary={binary.name} "
-        f"backend={backend} binary_sha256={digest} miner_pid={args.miner_pid}",
+        f"backend={backend} binary_sha256={digest} miner_pid={args.miner_pid} "
+        f"miner_log={miner_log} worker={worker_name()}",
         flush=True,
     )
     runpy.run_path(str(sidecar), run_name="__main__")
