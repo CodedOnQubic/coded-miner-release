@@ -113,7 +113,7 @@ for key in ("source_commit","release_commit","commit","git_commit","miner_commit
 PYCOMMIT
 )"
     else
-      value="$(grep -Eo '"(source_commit|release_commit|commit|git_commit|miner_commit)"[[:space:]]*:[[:space:]]*"[0-9a-fA-F]{7,40}"' "$mf" 2>/dev/null | head -1 | sed -E 's/.*"([0-9a-fA-F]{7,40})".*/\1/' | tr '[:upper:]' '[:lower:]' || true)"
+      value="$(grep -Eo '"'"'"(source_commit|release_commit|commit|git_commit|miner_commit)"'"'"[[:space:]]*:[[:space:]]*"'"'"[0-9a-fA-F]{7,40}"'"'"' "$mf" 2>/dev/null | head -1 | sed -E 's/.*"'"'"([0-9a-fA-F]{7,40})"'"'".*/\1/' | tr '[:upper:]' '[:lower:]' || true)"
     fi
 
     if printf '%s' "$value" | grep -Eq '^[0-9a-f]{7,40}$'; then
@@ -265,6 +265,89 @@ EOF_BETA
 '''
     text = replace_once(text, try_anchor, try_override + try_anchor, "initial Beta selection")
 
+    latest_runtime_anchor = '''MINER_PID=$!
+echo "$MINER_PID" > "$PID_DIR/miner.pid"
+
+sleep 3
+
+coded_ui_loader 82 "Starting analytics heartbeat"'''
+    latest_runtime_override = r'''MINER_PID=$!
+echo "$MINER_PID" > "$PID_DIR/miner.pid"
+
+sleep 3
+
+# M1091V67_MAC_LATEST_PRODUCTIVE_EXECUTION_TRUTH
+# On Apple Silicon the package launcher may spend time in Hardware Tune before
+# exec'ing the final productive binary. Do not freeze the old arm-neon
+# compatibility label into Analytics2. Wait on the same PID until its executable
+# identity proves Hybrid, Metal or NEON, then feed that exact execution mode to
+# sidecar and console. Beta uses the equivalent Python PID->binary bridge.
+if [ "$PLATFORM" = "macos-arm64" ]; then
+  coded_m1091v67_attempt=0
+  coded_m1091v67_resolved=0
+  while [ "$coded_m1091v67_attempt" -lt 330 ]; do
+    coded_m1091v67_command="$(ps -p "$MINER_PID" -o command= 2>/dev/null || true)"
+    coded_m1091v67_exe="${coded_m1091v67_command%% *}"
+    coded_m1091v67_name="${coded_m1091v67_exe##*/}"
+    case "$coded_m1091v67_name" in
+      coded-miner-hybrid)
+        SELECTED_BACKEND="hybrid"
+        export CODED_BACKEND="hybrid"
+        export CODED_KERNEL_BACKEND="hybrid"
+        export CODED_SELECTED_BACKEND="hybrid"
+        export CODED_HYBRID_CPU_BACKEND="neon"
+        export CODED_HYBRID_GPU_BACKEND="metal"
+        export CODED_HYBRID_COMPONENT_BACKENDS="neon,metal"
+        coded_m1091v67_resolved=1
+        ;;
+      coded-miner-metal)
+        SELECTED_BACKEND="metal"
+        export CODED_BACKEND="metal"
+        export CODED_KERNEL_BACKEND="metal"
+        export CODED_SELECTED_BACKEND="metal"
+        unset CODED_HYBRID_CPU_BACKEND CODED_HYBRID_GPU_BACKEND CODED_HYBRID_COMPONENT_BACKENDS
+        coded_m1091v67_resolved=1
+        ;;
+      coded-miner-neon)
+        SELECTED_BACKEND="neon"
+        export CODED_BACKEND="neon"
+        export CODED_KERNEL_BACKEND="neon"
+        export CODED_SELECTED_BACKEND="neon"
+        unset CODED_HYBRID_CPU_BACKEND CODED_HYBRID_GPU_BACKEND CODED_HYBRID_COMPONENT_BACKENDS
+        coded_m1091v67_resolved=1
+        ;;
+      coded-miner)
+        # Legacy public macOS packages used a generic productive binary whose
+        # implementation is NEON. Keep this only as an explicit legacy binary
+        # fallback; modern V5 packages expose the productive backend in filename.
+        SELECTED_BACKEND="neon"
+        export CODED_BACKEND="neon"
+        export CODED_KERNEL_BACKEND="neon"
+        export CODED_SELECTED_BACKEND="neon"
+        unset CODED_HYBRID_CPU_BACKEND CODED_HYBRID_GPU_BACKEND CODED_HYBRID_COMPONENT_BACKENDS
+        coded_m1091v67_resolved=1
+        ;;
+    esac
+    [ "$coded_m1091v67_resolved" = "1" ] && break
+    kill -0 "$MINER_PID" 2>/dev/null || break
+    coded_m1091v67_attempt=$((coded_m1091v67_attempt + 1))
+    sleep 1
+  done
+  if [ "$coded_m1091v67_resolved" != "1" ]; then
+    coded_m1091v54k_debug "[M1091V67] mac latest productive backend unresolved; keeping Analytics2 fail-closed startup identity"
+  else
+    coded_m1091v54k_debug "[M1091V67] mac latest productive backend=$SELECTED_BACKEND pid=$MINER_PID"
+  fi
+fi
+
+coded_ui_loader 82 "Starting analytics heartbeat"'''
+    text = replace_once(
+        text,
+        latest_runtime_anchor,
+        latest_runtime_override,
+        "mac latest productive execution truth",
+    )
+
     if SOLUTION_AUTHORITY_V3_TASK_SHA not in text or LEGACY_TASK_SHA in text:
         raise RuntimeError("Solution Authority V3 task patch failed")
     for marker in (
@@ -272,6 +355,7 @@ EOF_BETA
         "M1091V64B_PLATFORM_EXACT_BETA_AUTOUPDATE",
         "M1091V64C_NETWORK_ACCEPTED_PUBLIC_CONSOLE_REFRESH",
         "M1091V64D_PLATFORM_EXACT_INITIAL_BETA",
+        "M1091V67_MAC_LATEST_PRODUCTIVE_EXECUTION_TRUTH",
     ):
         if marker not in text:
             raise RuntimeError("generated runner marker missing: " + marker)
@@ -294,6 +378,12 @@ coded_m1091v51p_platform_asset_name() { :; }
 coded_m1091v51p_effective_release_line() { :; }
 coded_m1091v51p_kill_current_public_children() { :; }
 coded_public_autoupdate_start() { :; }
+MINER_PID=$!
+echo "$MINER_PID" > "$PID_DIR/miner.pid"
+
+sleep 3
+
+coded_ui_loader 82 "Starting analytics heartbeat"
 expected_task_sha="''' + LEGACY_TASK_SHA + '''"
 '''
     out = transform(fixture, "https://example.invalid/console.py")
@@ -301,6 +391,10 @@ expected_task_sha="''' + LEGACY_TASK_SHA + '''"
     assert SOLUTION_AUTHORITY_V3_TASK_SHA in out
     assert '"source_commit","release_commit","commit"' in out
     assert "M1091V64D_PLATFORM_EXACT_INITIAL_BETA" in out
+    assert "M1091V67_MAC_LATEST_PRODUCTIVE_EXECUTION_TRUTH" in out
+    assert 'SELECTED_BACKEND="hybrid"' in out
+    assert 'SELECTED_BACKEND="metal"' in out
+    assert 'SELECTED_BACKEND="neon"' in out
     assert "coded_public_autoupdate_start()" in out
     print("FINAL=PASS_RUN_V5_PATCH_SELF_TEST")
 
