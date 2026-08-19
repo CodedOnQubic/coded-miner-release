@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Canonical public CODED console for Anthill V5.
 
-SOLS is fail-closed Qubic NETWORK_ACCEPTED truth.  Local score/pass counters are
-never rendered as accepted solutions.
+SOLS is fail-closed Qubic NETWORK_ACCEPTED truth. Local score/pass counters are
+never rendered as accepted solutions. Productive backend display is native-frame
+authority once a CODED Analytics2 frame exists; launcher/environment backend is
+startup-only fallback and must never override observed execution truth.
 """
 from __future__ import annotations
 
@@ -94,17 +96,31 @@ def fmt_rate(value: float) -> str:
     return text.replace(".", ",")
 
 
-def backend_label(raw: str, platform: str) -> str:
+def _hybrid_components(raw: str) -> list[str]:
+    value = (raw or "").lower().replace("_", "-")
+    ordered = ("avx512", "avx2", "neon", "scalar", "metal", "cuda", "ampere", "rockwell")
+    return [name.upper() for name in ordered if name in value]
+
+
+def backend_label(raw: str, platform: str, scoring_backend: str = "", variant: str = "") -> str:
     value = (raw or "").lower()
     host = (platform or "").lower()
-    if "hybrid" in value or "neon+metal" in value:
-        return "NEON/METAL"
+    provenance = " ".join((value, (scoring_backend or "").lower(), (variant or "").lower()))
+    if "hybrid" in provenance or "neon+metal" in provenance:
+        components = _hybrid_components(provenance)
+        if len(components) >= 2:
+            return "HYBRID " + "↔".join(components[:2])
+        return "HYBRID"
     if "metal" in value:
         return "METAL"
     if "neon" in value:
         return "NEON"
     if "cuda" in value:
         return "CUDA"
+    if "ampere" in value:
+        return "AMPERE"
+    if "rockwell" in value:
+        return "ROCKWELL"
     if "avx512" in value or "avx-512" in value:
         return "AVX512"
     if "avx2" in value:
@@ -146,6 +162,8 @@ class PublicState:
         self.threads = env_any("CODED_THREADS", "THREADS", default="?")
         self.env_backend = env_any("CODED_SELECTED_BACKEND", "CODED_KERNEL_BACKEND", "CODED_BACKEND", "BACKEND", default="")
         self.frame_backend = ""
+        self.frame_scoring_backend = ""
+        self.frame_variant = ""
         self.platform = env_any("CODED_PLATFORM", default=sys.platform)
         self.epoch = epoch_or_fallback(env_any("QUBIC_EPOCH", "CODED_EPOCH", "CODED_PUBLIC_EPOCH", default="?"))
         self.printed_header = False
@@ -154,14 +172,22 @@ class PublicState:
         self.last_emit = 0.0
 
     def backend(self) -> str:
-        return backend_label(self.env_backend or self.frame_backend, self.platform)
+        # Native Analytics2 execution truth wins as soon as observed. Environment
+        # labels are only useful before the first productive frame exists.
+        raw = self.frame_backend or self.env_backend
+        return backend_label(raw, self.platform, self.frame_scoring_backend, self.frame_variant)
 
     def update_line(self, line: str) -> None:
         data = kv_parse(line)
         self.worker = data.get("worker") or self.worker
         self.threads = data.get("threads") or self.threads
         self.platform = data.get("platform") or self.platform
-        self.frame_backend = data.get("backend") or self.frame_backend
+        # Launcher output such as effective_backend is stronger startup evidence
+        # than inherited environment, but a native Analytics2 frame still wins.
+        if data.get("effective_backend"):
+            self.env_backend = data["effective_backend"]
+        elif data.get("backend") and not self.frame_backend:
+            self.env_backend = data["backend"]
         if data.get("epoch"):
             self.epoch = epoch_or_fallback(data["epoch"])
 
@@ -170,6 +196,13 @@ class PublicState:
         self.threads = frame.get("threads") or self.threads
         self.platform = frame.get("platform") or self.platform
         self.frame_backend = frame.get("backend") or self.frame_backend
+        self.frame_scoring_backend = frame.get("scoring_backend") or self.frame_scoring_backend
+        self.frame_variant = (
+            frame.get("backend_variant")
+            or frame.get("scoring_variant")
+            or frame.get("scoring_backend_variant")
+            or self.frame_variant
+        )
         self.epoch = epoch_or_fallback(frame.get("epoch") or self.epoch)
         self.latest_frame = frame
 
