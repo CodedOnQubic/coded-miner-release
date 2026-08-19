@@ -195,13 +195,15 @@ class PublicState:
         self.worker = frame.get("worker") or self.worker
         self.threads = frame.get("threads") or self.threads
         self.platform = frame.get("platform") or self.platform
-        self.frame_backend = frame.get("backend") or self.frame_backend
-        self.frame_scoring_backend = frame.get("scoring_backend") or self.frame_scoring_backend
+        # These are properties of this exact native frame. Never carry Hybrid
+        # provenance into a later single-backend frame if a field is absent.
+        self.frame_backend = frame.get("backend") or ""
+        self.frame_scoring_backend = frame.get("scoring_backend") or ""
         self.frame_variant = (
             frame.get("backend_variant")
             or frame.get("scoring_variant")
             or frame.get("scoring_backend_variant")
-            or self.frame_variant
+            or ""
         )
         self.epoch = epoch_or_fallback(frame.get("epoch") or self.epoch)
         self.latest_frame = frame
