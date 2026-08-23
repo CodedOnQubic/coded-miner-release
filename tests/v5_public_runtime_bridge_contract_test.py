@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regression contract for the V5 public console/update/Mac Beta bridge."""
+"""Regression contract for V5 public runtime policy + console bridge."""
 
 from __future__ import annotations
 
@@ -16,7 +16,10 @@ ROOT = Path(__file__).resolve().parents[1]
 CONSOLE = ROOT / "runtime/coded-public-console-v5.py"
 BRIDGE = ROOT / "runtime/coded-v5-sidecar-bridge.py"
 RUN_SH = ROOT / "run.sh"
+RUN_PS1 = ROOT / "run.ps1"
 COMMIT = "95450ff98bbec20c2952cbd8d5c6e6327280d926"
+POLICY_MARKER = "M1091V70_RUNTIME_POLICY_AUTHORITY_V1"
+PINNED_PUBLIC_RUNNER = "5e898b60779ea163b07bb44dd7a3e1186b414f8b"
 
 
 def load(path: Path, name: str):
@@ -25,6 +28,30 @@ def load(path: Path, name: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def shell_python_blocks(text: str):
+    """Yield exact Python heredocs used by the V70 wrapper."""
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        marker = None
+        for candidate in ("PY", "PYQ"):
+            if f"<<'{candidate}'" in line:
+                marker = candidate
+                break
+        if marker is None:
+            i += 1
+            continue
+        block = []
+        i += 1
+        while i < len(lines) and lines[i] != marker:
+            block.append(lines[i])
+            i += 1
+        assert i < len(lines), f"unterminated heredoc {marker}"
+        yield "\n".join(block) + "\n"
+        i += 1
 
 
 def main() -> int:
@@ -75,19 +102,47 @@ def main() -> int:
         assert frame["source_commit"] == COMMIT
 
     run_text = RUN_SH.read_text(encoding="utf-8")
-    assert "M1091V65_SINGLE_UPDATE_LOADER" in run_text
-    assert "M1091V65_SINGLE_UPDATE_FALLBACK" in run_text
-    assert "M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE" in run_text
-    assert "coded-miner-macos" in run_text
-    assert '--package "$pkg" --miner-pid "$miner_pid"' in run_text
-    # The obsolete assignment is present exactly once only as a negative grep
-    # guard against generated-runner regression; it is not executable code.
-    assert run_text.count('launch_entry="$prestart"') == 1
-    assert '! grep -Fq \'launch_entry="$prestart"\'' in run_text
-    assert 'coded_ui_loader 100 "Applying update"' in run_text
+    ps_text = RUN_PS1.read_text(encoding="utf-8")
+
+    # Linux + macOS: desired policy must be resolved before delegating into the
+    # proven runner where Hardware Tune / execution selection occurs.
+    assert POLICY_MARKER in run_text
+    assert PINNED_PUBLIC_RUNNER in run_text
+    assert "/analytics2/runtime-policy" in run_text
+    assert 'export CODED_HARDWARE_TUNE_REQUESTED_BACKEND="$backend"' in run_text
+    assert 'export CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT="$backend"' in run_text
+    assert 'export BACKEND="$backend"' in run_text
+    assert 'CODED_RUNTIME_POLICY_AUTHORITY="miner_default_profiles"' in run_text
+    assert 'managed CODED runtime policy is inconsistent' in run_text
+    assert 'CODED_RUNTIME_POLICY_CACHE_DIR' in run_text
+    assert '--backend=*' in run_text and '-avx512' in run_text and '-avx2' in run_text
+    assert 'export CODED_KERNEL_BACKEND="$backend"' not in run_text
+    assert 'export CODED_SELECTED_BACKEND="$backend"' not in run_text
+    assert 'exec bash "$coded_v70_base" "$@"' in run_text
+
+    blocks = list(shell_python_blocks(run_text))
+    assert len(blocks) >= 3
+    for idx, block in enumerate(blocks):
+        compile(block, f"run.sh:python-heredoc-{idx}", "exec")
+
+    # Windows: same authority before the old AUTO detector. The wrapper sets
+    # request inputs only and blocks backend shorthand from overwriting policy.
+    assert POLICY_MARKER in ps_text
+    assert PINNED_PUBLIC_RUNNER in ps_text
+    assert "/analytics2/runtime-policy" in ps_text
+    assert '$env:CODED_HARDWARE_TUNE_REQUESTED_BACKEND = $policyBackend' in ps_text
+    assert '$env:CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT = $policyBackend' in ps_text
+    assert '$env:BACKEND = $policyBackend' in ps_text
+    assert '$env:CODED_RUNTIME_POLICY_AUTHORITY = "miner_default_profiles"' in ps_text
+    assert 'refusing AUTO/backend fallback' in ps_text
+    assert 'CODED\\runtime-policy' in ps_text
+    assert "'^--?backend='" in ps_text
+    assert '$env:CODED_KERNEL_BACKEND = $policyBackend' not in ps_text
+    assert '$env:CODED_SELECTED_BACKEND = $policyBackend' not in ps_text
+    assert '& $delegate @params' in ps_text
 
     subprocess.run(["bash", "-n", str(RUN_SH)], check=True)
-    print("v5_public_runtime_bridge_contract=PASS")
+    print("v5_public_runtime_policy_bridge_contract=PASS")
     return 0
 
 
