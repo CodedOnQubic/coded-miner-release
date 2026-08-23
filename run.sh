@@ -50,11 +50,11 @@ for raw in raws:
                 worker = str(value).strip()
                 break
     if not rig:
-        m = re.search(r'(?i)["\']?(?:coded_)?rig_id["\']?\s*[:=]\s*["\']?([A-Za-z0-9_.:-]{1,128})', raw)
+        m = re.search(r"""(?i)["']?(?:coded_)?rig_id["']?\s*[:=]\s*["']?([A-Za-z0-9_.:-]{1,128})""", raw)
         if m:
             rig = m.group(1)
     if not worker:
-        m = re.search(r'(?i)["\']?(?:coded_)?worker(?:_name)?["\']?\s*[:=]\s*["\']?([A-Za-z0-9_.:-]{1,128})', raw)
+        m = re.search(r"""(?i)["']?(?:coded_)?worker(?:_name)?["']?\s*[:=]\s*["']?([A-Za-z0-9_.:-]{1,128})""", raw)
         if m:
             worker = m.group(1)
     if rig or worker:
@@ -209,8 +209,6 @@ PYQ
     esac
   done
 
-  CODED_V70_FILTERED_ARGC="${#filtered[@]}"
-  export CODED_V70_FILTERED_ARGC
   CODED_V70_FILTERED_ARGS_FILE="${TMPDIR:-/tmp}/coded-v70-args-${UID:-0}-$$"
   export CODED_V70_FILTERED_ARGS_FILE
   : > "$CODED_V70_FILTERED_ARGS_FILE"
