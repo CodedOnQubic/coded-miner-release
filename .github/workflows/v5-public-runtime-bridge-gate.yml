@@ -6,8 +6,10 @@ on:
       - main
     paths:
       - 'run.sh'
+      - 'run.ps1'
       - 'runtime/coded-public-console-v5.py'
       - 'runtime/coded-v5-sidecar-bridge.py'
+      - 'runtime/run-v5-patch.py'
       - 'tests/v5_public_runtime_bridge_contract_test.py'
       - '.github/workflows/v5-public-runtime-bridge-gate.yml'
   workflow_dispatch:
@@ -29,9 +31,9 @@ jobs:
           set -Eeuo pipefail
           python3 -m py_compile runtime/coded-public-console-v5.py runtime/coded-v5-sidecar-bridge.py runtime/run-v5-patch.py tests/v5_public_runtime_bridge_contract_test.py
           bash -n run.sh
-      - name: V5 public runtime bridge contract
+      - name: V5 public runtime policy bridge contract
         run: |
           set -Eeuo pipefail
           python3 tests/v5_public_runtime_bridge_contract_test.py
           python3 runtime/run-v5-patch.py --self-test
-          echo 'v5_public_runtime_bridge_gate=GREEN'
+          echo 'v5_public_runtime_policy_bridge_gate=GREEN'
