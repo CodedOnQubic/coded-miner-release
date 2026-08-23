@@ -1,300 +1,240 @@
 #!/usr/bin/env bash
-# M1091V64_SHARED_RUNSH_V5_AUTOUPDATE_AUTHORITY
-# M1091V65_SINGLE_PUBLIC_UPDATE_TRANSITION
-# M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE
-# M1091V66_MAC_AUTO_REQUEST_AUTHORITY
+# M1091V70_RUNTIME_POLICY_AUTHORITY_V1
 #
-# One public Linux/macOS lifecycle, one updater. The proven shared runner is
-# pinned and patched with the V5 compatibility adapter before execution.
-# No experiment is started here and no second updater/daemon is introduced.
+# Cross-platform public Unix entrypoint for Linux and macOS.
+# Desired startup policy is resolved before the proven V5 runner snapshots
+# backend intent. Execution truth remains owned by Hardware Tune / the final
+# productive binary and Analytics2; this wrapper never writes execution labels.
 
 set -Eeuo pipefail
 
-# Freeze the caller's backend request before the legacy/core runner writes any
-# detected/selected execution labels. On Apple Silicon, no explicit backend in
-# the public one-liner means AUTO. CODED_SELECTED_BACKEND/CODED_KERNEL_BACKEND
-# are execution outputs and are never request authority.
-if [[ -z "${CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT+x}" ]]; then
-  CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT="${CODED_HARDWARE_TUNE_REQUESTED_BACKEND:-${BACKEND:-auto}}"
-  export CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT
-fi
+CODED_PUBLIC_RUNNER_BASE_COMMIT="5e898b60779ea163b07bb44dd7a3e1186b414f8b"
+CODED_PUBLIC_RUNNER_BASE_URL="https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/${CODED_PUBLIC_RUNNER_BASE_COMMIT}/run.sh"
+CODED_RUNTIME_POLICY_SCHEMA="coded.runtime.policy.v1"
+export CODED_RUNTIME_POLICY_SCHEMA
 
-CORE_COMMIT="d8ddc3f38a105233a6327920373a3ebb2939a55f"
-CORE_URL="https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/${CORE_COMMIT}/run.sh"
-PATCH_URL="${CODED_RUN_V5_PATCH_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/runtime/run-v5-patch.py}"
-CONSOLE_URL="${CODED_PUBLIC_CONSOLE_V5_URL:-https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/runtime/coded-public-console-v5.py}"
-CACHE="${TMPDIR:-/tmp}/coded-runsh-v64-${UID:-0}"
-CORE="$CACHE/run-core-${CORE_COMMIT}.sh"
-PATCHER="$CACHE/run-v5-patch.py"
-PATCHED="$CACHE/run-v5.sh"
+coded_v70_identity_from_config() {
+  python3 - <<'PY' 2>/dev/null || true
+import json, os, re
+raws = [
+    os.environ.get("CUSTOM_CONFIG", ""),
+    os.environ.get("CUSTOM_USER_CONFIG", ""),
+    os.environ.get("HIVE_CUSTOM_CONFIG", ""),
+    os.environ.get("USER_CONFIG", ""),
+    os.environ.get("MINER_CUSTOM_CONFIG", ""),
+    os.environ.get("CODED_USER_CONFIG", ""),
+    os.environ.get("EXTRA_CONFIG", ""),
+]
+worker_keys = ("worker", "worker_name", "WORKER", "WORKER_NAME", "CODED_WORKER", "CODED_WORKER_NAME")
+rig_keys = ("rig_id", "RIG_ID", "CODED_RIG_ID")
+worker = ""
+rig = ""
+for raw in raws:
+    raw = (raw or "").strip()
+    if not raw:
+        continue
+    obj = None
+    try:
+        obj = json.loads(raw)
+    except Exception:
+        obj = None
+    if isinstance(obj, dict):
+        for key in rig_keys:
+            value = obj.get(key)
+            if value not in (None, ""):
+                rig = str(value).strip()
+                break
+        for key in worker_keys:
+            value = obj.get(key)
+            if value not in (None, ""):
+                worker = str(value).strip()
+                break
+    if not rig:
+        m = re.search(r'(?i)["\']?(?:coded_)?rig_id["\']?\s*[:=]\s*["\']?([A-Za-z0-9_.:-]{1,128})', raw)
+        if m:
+            rig = m.group(1)
+    if not worker:
+        m = re.search(r'(?i)["\']?(?:coded_)?worker(?:_name)?["\']?\s*[:=]\s*["\']?([A-Za-z0-9_.:-]{1,128})', raw)
+        if m:
+            worker = m.group(1)
+    if rig or worker:
+        break
+print(rig)
+print(worker)
+PY
+}
 
-mkdir -p "$CACHE"
+coded_v70_parse_policy() {
+  POLICY_JSON="$1" python3 - <<'PY' 2>/dev/null || true
+import json, os
+try:
+    data = json.loads(os.environ.get("POLICY_JSON") or "{}")
+except Exception:
+    raise SystemExit(0)
+if data.get("ok") is not True or data.get("schema") != "coded.runtime.policy.v1":
+    raise SystemExit(0)
+managed = bool(data.get("managed"))
+valid = bool(data.get("valid"))
+policy = data.get("policy") if isinstance(data.get("policy"), dict) else {}
+matched = data.get("matched") if isinstance(data.get("matched"), dict) else {}
+backend = str(policy.get("backend") or "").strip().lower()
+canonical_rig = str(matched.get("rig_id") or "").strip()
+canonical_worker = str(matched.get("worker_name") or "").strip()
+profile = str(policy.get("profile_version") or "").strip()
+print("1" if managed else "0")
+print("1" if valid else "0")
+print(backend)
+print(canonical_rig)
+print(canonical_worker)
+print(profile)
+PY
+}
 
-if [ ! -s "$CORE" ]; then
-  tmp="$CORE.tmp.$$"
-  curl -fsSL --retry 3 --connect-timeout 5 --max-time 30 "$CORE_URL" -o "$tmp"
-  grep -Fq 'M1091V51P_FINAL_CHANNEL_AWARE_PUBLIC_AUTOUPDATE' "$tmp"
-  mv -f "$tmp" "$CORE"
-fi
+coded_v70_policy_apply() {
+  local rig worker config_identity config_rig config_worker pool query url live_json parse
+  local managed valid backend canonical_rig canonical_worker profile source cache_root cache_key cache_file
+  local -a filtered
 
-tmp_patch="$PATCHER.tmp.$$"
-curl -fsSL --retry 3 --connect-timeout 5 --max-time 20 "$PATCH_URL?cb=$(date +%s)" -o "$tmp_patch"
-grep -Fq 'M1091V64_RUNSH_PATCH_V5' "$tmp_patch"
-python3 "$tmp_patch" --self-test >/dev/null
-mv -f "$tmp_patch" "$PATCHER"
-chmod 0755 "$PATCHER"
+  rig="${CODED_RIG_ID:-${RIG_ID:-${HIVE_RIG_ID:-}}}"
+  worker="${WORKER:-${QUBIC_WORKER:-${CODED_WORKER:-${CODED_WORKER_NAME:-${WORKER_NAME:-${RIG_NAME:-}}}}}}"
 
-tmp_runner="$PATCHED.tmp.$$"
-python3 "$PATCHER" \
-  --input "$CORE" \
-  --output "$tmp_runner" \
-  --console-url "$CONSOLE_URL" >/dev/null
-
-# M1091V65: keep the proven updater but normalize its visible restart and repair
-# the modern macOS Beta helper. The hardware-tune prestart is sourced only by
-# coded-miner-macos; it is never executed as the productive miner itself.
-python3 - "$tmp_runner" <<'PYV65'
-from pathlib import Path
-import sys
-
-path = Path(sys.argv[1])
-text = path.read_text(encoding="utf-8")
-
-
-def replace_once(anchor: str, replacement: str, label: str) -> None:
-    global text
-    count = text.count(anchor)
-    if count != 1:
-        raise SystemExit(f"M1091V65 {label}: expected exactly one anchor, found {count}")
-    text = text.replace(anchor, replacement, 1)
-
-
-def replace_section(start_marker: str, end_marker: str, replacement: str, label: str) -> None:
-    global text
-    if text.count(start_marker) != 1 or text.count(end_marker) != 1:
-        raise SystemExit(
-            f"M1091V65 {label}: boundary mismatch start={text.count(start_marker)} end={text.count(end_marker)}"
-        )
-    start = text.index(start_marker)
-    end = text.index(end_marker, start)
-    text = text[:start] + replacement.rstrip() + "\n" + text[end:]
-
-
-replace_once(
-'''coded_m1091v54k_public_restart_loader() {
-  coded_ui_loader 75 "Applying update"
-}''',
-'''# M1091V65_SINGLE_UPDATE_LOADER
-coded_m1091v54k_public_restart_loader() {
-  if [ "${CODED_PUBLIC_UPDATE_UI_SHOWN:-0}" = "1" ]; then
-    return 0
+  if { [ -z "$rig" ] || [ -z "$worker" ]; } && command -v python3 >/dev/null 2>&1; then
+    config_identity="$(coded_v70_identity_from_config)"
+    config_rig="$(printf '%s\n' "$config_identity" | sed -n '1p')"
+    config_worker="$(printf '%s\n' "$config_identity" | sed -n '2p')"
+    [ -n "$rig" ] || rig="$config_rig"
+    [ -n "$worker" ] || worker="$config_worker"
   fi
-  export CODED_PUBLIC_UPDATE_UI_SHOWN=1
-  coded_ui_loader 100 "Applying update"
-  coded_ui_loader_finish
-}''',
-"restart loader",
-)
 
-replace_once(
-'''  coded_ui_box '$0.01  IS  CODED'
-  coded_ui_loader 12 "Updating CODED MINER"
-  sleep 1
-  coded_ui_loader 45 "Downloading latest CODED MINER"
-  sleep 1
-  coded_m1091v54k_public_restart_loader
-  sleep 1
-  coded_ui_loader 100 "Restarting neural network training"
-  coded_ui_loader_finish
+  [ -n "$rig" ] || rig="$worker"
+  [ -n "$worker" ] || worker="$rig"
+  [ -n "$rig" ] || return 0
 
-  coded_m1091v53a_exec_fresh_runsh''',
-'''  # M1091V65_SINGLE_UPDATE_FALLBACK
-  coded_m1091v54k_public_restart_loader
-  coded_m1091v53a_exec_fresh_runsh''',
-"legacy multi-loader fallback",
-)
+  cache_root="${CODED_RUNTIME_POLICY_CACHE_DIR:-${HOME:-/tmp}/.coded-miner/runtime-policy}"
+  cache_key="$(printf '%s' "${rig:-$worker}" | tr -cd 'A-Za-z0-9_.-' | cut -c1-96)"
+  [ -n "$cache_key" ] || cache_key="coded-worker"
+  cache_file="$cache_root/${cache_key}.json"
+  umask 077
+  mkdir -p "$cache_root" 2>/dev/null || true
 
-replace_once(
-'''coded_public_autoupdate_start
+  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-${CODED_POOL_API_BASE:-https://api.codedonqubic.com}}}"
+  pool="${pool%/}"
+  case "$pool" in */analytics) pool="${pool%/analytics}" ;; esac
+  url="${CODED_RUNTIME_POLICY_URL:-${pool}/analytics2/runtime-policy}"
 
-coded_ui_warmup "$CODED_PUBLIC_BOOT_SEC"
-coded_ui_loader 100 "Neural network training online"
-coded_ui_loader_finish''',
-'''coded_public_autoupdate_start
+  query="$(python3 - "$rig" "$worker" <<'PYQ' 2>/dev/null || true
+import sys
+from urllib.parse import urlencode
+rig = (sys.argv[1] or "").strip()
+worker = (sys.argv[2] or "").strip()
+params = {}
+if rig: params["rig_id"] = rig
+if worker: params["worker_name"] = worker
+print(urlencode(params))
+PYQ
+)"
 
-if [ "${CODED_PUBLIC_UPDATE_UI_SHOWN:-0}" = "1" ]; then
-  # Fresh runner reached productive startup after an update. Do not render a
-  # second progress bar for the same transition; arm the flag for future updates.
-  unset CODED_PUBLIC_UPDATE_UI_SHOWN
-else
-  coded_ui_warmup "$CODED_PUBLIC_BOOT_SEC"
-  coded_ui_loader 100 "Neural network training online"
-  coded_ui_loader_finish
-fi''',
-"post-update startup loader",
-)
+  live_json=""
+  if [ -n "$query" ]; then
+    live_json="$(curl -fsSL --retry 2 --connect-timeout 4 --max-time 10 "${url}?${query}" 2>/dev/null || true)"
+  fi
 
-mac_helper = r'''# M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE
-coded_m1091v50y_exec_macos_beta_wrapper_if_present() {
-  local root pkg console launcher bin sidecar worker wallet threads pool_url mining_pool
-  local run_log analytics_log miner_pid sidecar_pid rc backend_raw backend_arg
-  local bridge bridge_tmp bridge_url tail_pid
-  local -a args
+  source="live"
+  parse=""
+  if [ -n "$live_json" ]; then
+    parse="$(coded_v70_parse_policy "$live_json")"
+    if [ -n "$parse" ]; then
+      managed="$(printf '%s\n' "$parse" | sed -n '1p')"
+      if [ "$managed" = "1" ]; then
+        printf '%s\n' "$live_json" > "$cache_file" 2>/dev/null || true
+      else
+        rm -f "$cache_file" 2>/dev/null || true
+      fi
+    fi
+  fi
 
-  root="/tmp/coded-m1091v50h-runsh-beta/pkg"
+  if [ -z "$parse" ] && [ -s "$cache_file" ]; then
+    source="cache"
+    live_json="$(cat "$cache_file" 2>/dev/null || true)"
+    parse="$(coded_v70_parse_policy "$live_json")"
+  fi
 
-  worker="${WORKER:-${CODED_WORKER:-coded-worker}}"
-  wallet="${WALLET:-${CODED_WALLET:-TEST_WALLET}}"
-  threads="${THREADS:-${CODED_THREADS:-}}"
-  pool_url="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
-  mining_pool="${POOL:-${CODED_POOL:-pool.codedonqubic.com:7777}}"
+  [ -n "$parse" ] || return 0
 
-  export WORKER="$worker"
-  export WALLET="$wallet"
-  export CODED_WORKER="$worker"
-  export CODED_WORKER_NAME="$worker"
-  export CODED_WALLET="$wallet"
-  export CODED_POOL_API_URL="$pool_url"
-  export POOL_API_URL="$pool_url"
-  export CODED_POOL_API_BASE="$pool_url"
+  managed="$(printf '%s\n' "$parse" | sed -n '1p')"
+  valid="$(printf '%s\n' "$parse" | sed -n '2p')"
+  backend="$(printf '%s\n' "$parse" | sed -n '3p')"
+  canonical_rig="$(printf '%s\n' "$parse" | sed -n '4p')"
+  canonical_worker="$(printf '%s\n' "$parse" | sed -n '5p')"
+  profile="$(printf '%s\n' "$parse" | sed -n '6p')"
 
-  [ -n "$threads" ] && export THREADS="$threads" && export CODED_THREADS="$threads"
+  [ "$managed" = "1" ] || return 0
+  if [ "$valid" != "1" ]; then
+    echo "ERROR: managed CODED runtime policy is inconsistent; refusing AUTO/backend fallback" >&2
+    echo "Policy identity: rig=${canonical_rig:-$rig} worker=${canonical_worker:-$worker} profile=${profile:-unknown}" >&2
+    exit 78
+  fi
 
-  export CODED_ANALYTICS="${CODED_ANALYTICS:-yes}"
-  export CODED_FLEET_JOIN="${CODED_FLEET_JOIN:-yes}"
-  export CODED_RELEASE_CHANNEL="beta"
-  export CODED_RELEASE_COMMIT="${beta_commit:-${CODED_RELEASE_COMMIT:-}}"
-  export CODED_RELEASE_VERSION="${beta_version:-${CODED_RELEASE_VERSION:-}}"
-  export CODED_MINER_COMMIT="${beta_commit:-${CODED_MINER_COMMIT:-}}"
-  export CODED_MINER_VERSION="${beta_version:-${CODED_MINER_VERSION:-}}"
-  export GIT_COMMIT="${beta_commit:-${GIT_COMMIT:-}}"
-  export RELEASE_VERSION="${beta_version:-${RELEASE_VERSION:-}}"
-  export CODED_BUILD_TARGET="macos-arm64"
-  export CODED_PLATFORM="macos-arm64"
-
-  # Request authority is the original public caller intent, frozen before the
-  # core runner can emit legacy detected/selected backend labels. With no
-  # backend in the Mac one-liner this remains AUTO until Hardware Tune V5 makes
-  # a correctness-gated local selection.
-  backend_raw="${CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT:-${CODED_HARDWARE_TUNE_REQUESTED_BACKEND:-${BACKEND:-auto}}}"
-  case "$(printf '%s' "$backend_raw" | tr '[:upper:]' '[:lower:]')" in
-    *hybrid*|*neon+metal*) backend_arg="hybrid" ;;
-    *metal*) backend_arg="metal" ;;
-    *neon*|arm|arm64) backend_arg="neon" ;;
-    *) backend_arg="auto" ;;
+  case "$backend" in
+    auto|scalar|avx2|avx512|neon|metal|cuda|hybrid) ;;
+    *)
+      echo "ERROR: managed CODED runtime policy returned unsupported backend '$backend'" >&2
+      exit 78
+      ;;
   esac
 
-  for pkg in \
-    "$root/coded-miner" \
-    "$root"
-  do
-    console="$pkg/coded-public-console.py"
-    launcher="$pkg/coded-miner-macos"
-    bin="$pkg/coded-miner"
-    sidecar="$pkg/coded-runtime-sidecar.py"
+  export CODED_RUNTIME_POLICY_MANAGED="1"
+  export CODED_RUNTIME_POLICY_VALID="1"
+  export CODED_RUNTIME_POLICY_SOURCE="$source"
+  export CODED_RUNTIME_POLICY_AUTHORITY="miner_default_profiles"
+  export CODED_RUNTIME_POLICY_BACKEND="$backend"
+  export CODED_RUNTIME_POLICY_PROFILE="$profile"
+  [ -n "$canonical_rig" ] && export CODED_RUNTIME_POLICY_RIG_ID="$canonical_rig"
+  [ -n "$canonical_worker" ] && export CODED_RUNTIME_POLICY_WORKER_NAME="$canonical_worker"
 
-    if [ -x "$launcher" ] || [ -x "$bin" ]; then
-      cd "$pkg" || return 1
+  # Request authority: these are inputs. CODED_KERNEL_BACKEND and
+  # CODED_SELECTED_BACKEND remain execution outputs and are deliberately not set.
+  export CODED_HARDWARE_TUNE_REQUESTED_BACKEND="$backend"
+  export CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT="$backend"
+  export BACKEND="$backend"
 
-      run_log="${TMPDIR:-/tmp}/coded-miner-beta-${worker}.log"
-      analytics_log="${TMPDIR:-/tmp}/coded-miner-beta-${worker}-analytics.log"
-      : > "$run_log" 2>/dev/null || run_log="/tmp/coded-miner-beta-${worker}.log"
-      : > "$run_log" 2>/dev/null || true
-      : > "$analytics_log" 2>/dev/null || analytics_log="/tmp/coded-miner-beta-${worker}-analytics.log"
-      : > "$analytics_log" 2>/dev/null || true
-
-      coded_m1091v54k_debug "[M1091V65] mac beta package=$pkg requested_backend=$backend_arg worker=$worker"
-      coded_m1091v54k_debug "[M1091V65] mac beta log=$run_log analytics_log=$analytics_log"
-
-      if [ -x "$launcher" ]; then
-        args=("--backend=$backend_arg" "--pool" "$mining_pool" "--wallet" "$wallet" "--worker" "$worker")
-        [ -n "$threads" ] && args+=("--threads" "$threads")
-        "$launcher" "${args[@]}" > "$run_log" 2>&1 &
-      else
-        args=("--pool" "$mining_pool" "--wallet" "$wallet" "--worker" "$worker")
-        [ -n "$threads" ] && args+=("--threads" "$threads")
-        "$bin" "${args[@]}" > "$run_log" 2>&1 &
-      fi
-      miner_pid="$!"
-
-      # The bridge follows this same PID across launcher exec, resolves the
-      # exact final packaged productive binary, hashes its bytes, and only then
-      # starts Analytics. No requested-backend hash guessing.
-      sidecar_pid=""
-      if [ -f "$sidecar" ] && command -v python3 >/dev/null 2>&1; then
-        bridge="$pkg/coded-v5-sidecar-bridge.py"
-        bridge_tmp="${bridge}.tmp.$$"
-        bridge_url="https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/runtime/coded-v5-sidecar-bridge.py"
-        if curl -fsSL --retry 3 --connect-timeout 5 --max-time 20 "$bridge_url?cb=$(date +%s)" -o "$bridge_tmp" \
-          && grep -Fq 'M1091V65_MAC_BETA_SIDECAR_BUILD_IDENTITY_BRIDGE' "$bridge_tmp"
-        then
-          mv -f "$bridge_tmp" "$bridge"
-          chmod 0755 "$bridge" 2>/dev/null || true
-          PYTHONPATH="$pkg${PYTHONPATH:+:$PYTHONPATH}" \
-            python3 "$bridge" --sidecar "$sidecar" --package "$pkg" --miner-pid "$miner_pid" \
-            >> "$analytics_log" 2>&1 &
-          sidecar_pid="$!"
-        else
-          rm -f "$bridge_tmp" 2>/dev/null || true
-          coded_m1091v54k_debug "[M1091V65] exact sidecar bridge unavailable; registry remains fail-closed"
-        fi
-      fi
-
-      coded_m1091v65_cleanup_mac_beta() {
-        [ -z "${sidecar_pid:-}" ] || kill "$sidecar_pid" 2>/dev/null || true
-        [ -z "${miner_pid:-}" ] || kill "$miner_pid" 2>/dev/null || true
-        [ -z "${sidecar_pid:-}" ] || wait "$sidecar_pid" 2>/dev/null || true
-        [ -z "${miner_pid:-}" ] || wait "$miner_pid" 2>/dev/null || true
-      }
-      trap coded_m1091v65_cleanup_mac_beta HUP INT TERM EXIT
-
-      rc=0
-      if [ -f "$console" ] && command -v python3 >/dev/null 2>&1; then
-        python3 "$console" "$run_log" "$miner_pid" || rc="$?"
-      else
-        tail -f "$run_log" &
-        tail_pid="$!"
-        wait "$miner_pid" || rc="$?"
-        kill "$tail_pid" 2>/dev/null || true
-        wait "$tail_pid" 2>/dev/null || true
-      fi
-
-      coded_m1091v65_cleanup_mac_beta
-      trap - HUP INT TERM EXIT
-      exit "$rc"
-    fi
+  # A managed policy must not be undone by legacy shorthand/--backend flags
+  # later in the pinned runner's argument parser. Non-backend arguments remain
+  # byte-for-byte in order.
+  filtered=()
+  for arg in "$@"; do
+    case "$arg" in
+      -auto|-scalar|-avx2|-avx512|-neon|-metal|-cuda|-hybrid|--backend=*|-backend=*) ;;
+      *) filtered+=("$arg") ;;
+    esac
   done
 
-  return 1
+  CODED_V70_FILTERED_ARGC="${#filtered[@]}"
+  export CODED_V70_FILTERED_ARGC
+  CODED_V70_FILTERED_ARGS_FILE="${TMPDIR:-/tmp}/coded-v70-args-${UID:-0}-$$"
+  export CODED_V70_FILTERED_ARGS_FILE
+  : > "$CODED_V70_FILTERED_ARGS_FILE"
+  for arg in "${filtered[@]}"; do printf '%s\0' "$arg" >> "$CODED_V70_FILTERED_ARGS_FILE"; done
 }
-'''
 
-replace_section(
-    "coded_m1091v50y_exec_macos_beta_wrapper_if_present() {",
-    "# M1091V50V_PLATFORM_AWARE_BETA_ASSET",
-    mac_helper,
-    "mac beta productive helper",
-)
+coded_v70_policy_apply "$@"
 
-path.write_text(text, encoding="utf-8")
-PYV65
+# Rebuild argv only when a managed policy filtered backend selectors.
+if [ "${CODED_RUNTIME_POLICY_MANAGED:-0}" = "1" ] && [ -f "${CODED_V70_FILTERED_ARGS_FILE:-}" ]; then
+  coded_v70_args=()
+  while IFS= read -r -d '' coded_v70_arg; do coded_v70_args+=("$coded_v70_arg"); done < "$CODED_V70_FILTERED_ARGS_FILE"
+  rm -f "$CODED_V70_FILTERED_ARGS_FILE" 2>/dev/null || true
+  set -- "${coded_v70_args[@]}"
+fi
 
-bash -n "$tmp_runner"
-grep -Fq 'M1091V64A_V5_SOURCE_COMMIT_AUTOUPDATE' "$tmp_runner"
-grep -Fq 'M1091V64B_PLATFORM_EXACT_BETA_AUTOUPDATE' "$tmp_runner"
-grep -Fq 'M1091V64C_NETWORK_ACCEPTED_PUBLIC_CONSOLE_REFRESH' "$tmp_runner"
-grep -Fq 'M1091V64D_PLATFORM_EXACT_INITIAL_BETA' "$tmp_runner"
-grep -Fq 'M1091V65_SINGLE_UPDATE_LOADER' "$tmp_runner"
-grep -Fq 'M1091V65_SINGLE_UPDATE_FALLBACK' "$tmp_runner"
-grep -Fq 'M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE' "$tmp_runner"
-grep -Fq 'coded-miner-macos' "$tmp_runner"
-grep -Fq -- '--package "$pkg" --miner-pid "$miner_pid"' "$tmp_runner"
-grep -Fq 'CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT' "$tmp_runner"
-! grep -Fq 'launch_entry="$prestart"' "$tmp_runner"
-grep -Fq '0c5e9e42c6d86c320af62f4125ca85b2446f2b098893fd6521bcf66c22f7f00a' "$tmp_runner"
-! grep -Fq '403e24225f5b0512d0cbf49758fed9a01e7334d3cea565ad6c5e82420b713226' "$tmp_runner"
-
-chmod 0755 "$tmp_runner"
-mv -f "$tmp_runner" "$PATCHED"
-
-exec bash "$PATCHED" "$@"
+# Delegate to the last proven public runner. Its own channel-aware updater still
+# returns to main/run.sh, so every real lifecycle restart resolves policy again.
+coded_v70_base="${TMPDIR:-/tmp}/coded-public-runner-${CODED_PUBLIC_RUNNER_BASE_COMMIT}.sh"
+coded_v70_tmp="${coded_v70_base}.tmp.$$"
+if [ ! -s "$coded_v70_base" ]; then
+  curl -fsSL --retry 3 --connect-timeout 5 --max-time 30 "${CODED_PUBLIC_RUNNER_BASE_URL}?cb=$(date +%s)" -o "$coded_v70_tmp"
+  grep -Fq 'M1091V65_MAC_BETA_PRODUCTIVE_RUNTIME_BRIDGE' "$coded_v70_tmp"
+  mv -f "$coded_v70_tmp" "$coded_v70_base"
+fi
+chmod 0755 "$coded_v70_base" 2>/dev/null || true
+exec bash "$coded_v70_base" "$@"
