@@ -209,5 +209,19 @@ $params = @{
 if ($Beta) { $params["Beta"] = $true }
 if ($ExtraArgs -and $ExtraArgs.Count -gt 0) { $params["ExtraArgs"] = [string[]]$ExtraArgs }
 
+# M1091V233_WINDOWS_CUDA_REMOTE_ONE_SHOT_SUPERVISOR
+# C1 is remote and receives the public command once. Keep the bootstrap shell
+# alive across miner exits, failed CUDA golden gates, and malformed beta assets.
+# Every retry re-resolves the beta channel inside the proven delegate, so a
+# later fixed Build Beta recovers the rig without another CMD invocation.
+if ($script:CodedExplicitCudaBeta) {
+  while ($true) {
+    & $delegate @params
+    $rc = $LASTEXITCODE
+    Write-Host ("CUDA beta runner ended rc=" + $rc + "; retrying channel in 60s...")
+    Start-Sleep -Seconds 60
+  }
+}
+
 & $delegate @params
 exit $LASTEXITCODE
