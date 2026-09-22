@@ -32,6 +32,8 @@ for token in (
     'architecture=blackwell',
     'golden_gate_sha256',
     'task_sha256',
+    'gpu_identity',
+    'Get-WmiObject Win32_VideoController',
     'CUDA beta packaged task authority mismatch',
     'Start-CodedWindowsChannelAutoupdateV53B',
     '& $self -Wallet $Wallet -Worker $Worker -Pool $Pool -Backend $Backend -Threads $Threads -Beta',
