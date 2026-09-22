@@ -14,6 +14,8 @@ for token in (
     'CODED_HARDWARE_TUNE_REQUESTED_BACKEND = $effectivePolicyBackend',
     'CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT = $effectivePolicyBackend',
     'run-base-v233.ps1',
+    'M1091V233_WINDOWS_CUDA_REMOTE_ONE_SHOT_SUPERVISOR',
+    'retrying channel in 60s',
 ):
     assert token in wrapper, token
 
