@@ -16,8 +16,25 @@ param(
 # remain outputs of the productive miner and are never written by this wrapper.
 
 $ErrorActionPreference = "Stop"
-$CodedPublicRunnerBaseCommit = "5e898b60779ea163b07bb44dd7a3e1186b414f8b"
-$CodedPublicRunnerBaseUrl = "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/$CodedPublicRunnerBaseCommit/run.ps1"
+
+# M1091V233_WINDOWS_CUDA_EXPLICIT_BETA_AUTHORITY
+# A one-time public "-cuda -beta" launch is an explicit operator request. Keep
+# that request across policy lookup and every channel autoupdate; managed CPU
+# profiles must not silently turn the remote CUDA rig into a CPU miner.
+$script:CodedExplicitCudaBeta = $false
+if ($Beta) {
+  if (([string]$Backend).Trim().ToLowerInvariant() -eq "cuda") {
+    $script:CodedExplicitCudaBeta = $true
+  }
+  foreach ($arg in @($ExtraArgs)) {
+    $token = ([string]$arg).Trim().ToLowerInvariant()
+    if ($token -in @("-cuda","--cuda") -or $token -eq "-backend=cuda" -or $token -eq "--backend=cuda") {
+      $script:CodedExplicitCudaBeta = $true
+    }
+  }
+}
+$CodedPublicRunnerBaseCommit = "63dc0f0cbb49124457a065770811a197887c5fa9"
+$CodedPublicRunnerBaseUrl = "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/$CodedPublicRunnerBaseCommit/run-base-v233.ps1"
 $env:CODED_RUNTIME_POLICY_SCHEMA = "coded.runtime.policy.v1"
 
 function Enable-CodedV70Tls {
@@ -125,19 +142,20 @@ if ($policy -and $policy.managed -eq $true) {
   }
 
   $requestedBackend = ([string]$policy.policy.requested_backend).Trim().ToLowerInvariant()
-  if ($requestedBackend -and $requestedBackend -ne $policyBackend) {
+  if ($requestedBackend -and $requestedBackend -ne $policyBackend -and -not $script:CodedExplicitCudaBeta) {
     throw "Managed CODED runtime policy request/backend mismatch."
   }
 
-  $Backend = $policyBackend
-  $env:BACKEND = $policyBackend
-  $env:CODED_HARDWARE_TUNE_REQUESTED_BACKEND = $policyBackend
-  $env:CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT = $policyBackend
+  $effectivePolicyBackend = if ($script:CodedExplicitCudaBeta) { "cuda" } else { $policyBackend }
+  $Backend = $effectivePolicyBackend
+  $env:BACKEND = $effectivePolicyBackend
+  $env:CODED_HARDWARE_TUNE_REQUESTED_BACKEND = $effectivePolicyBackend
+  $env:CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT = $effectivePolicyBackend
   $env:CODED_RUNTIME_POLICY_MANAGED = "1"
   $env:CODED_RUNTIME_POLICY_VALID = "1"
   $env:CODED_RUNTIME_POLICY_SOURCE = $policySource
-  $env:CODED_RUNTIME_POLICY_AUTHORITY = "miner_default_profiles"
-  $env:CODED_RUNTIME_POLICY_BACKEND = $policyBackend
+  $env:CODED_RUNTIME_POLICY_AUTHORITY = if ($script:CodedExplicitCudaBeta) { "explicit_user_cuda_beta" } else { "miner_default_profiles" }
+  $env:CODED_RUNTIME_POLICY_BACKEND = $effectivePolicyBackend
   $env:CODED_RUNTIME_POLICY_PROFILE = [string]$policy.policy.profile_version
   if ($policy.matched.rig_id) { $env:CODED_RUNTIME_POLICY_RIG_ID = [string]$policy.matched.rig_id }
   if ($policy.matched.worker_name) { $env:CODED_RUNTIME_POLICY_WORKER_NAME = [string]$policy.matched.worker_name }
