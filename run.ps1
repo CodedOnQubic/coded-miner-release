@@ -22,17 +22,18 @@ $ErrorActionPreference = "Stop"
 # that request across policy lookup and every channel autoupdate; managed CPU
 # profiles must not silently turn the remote CUDA rig into a CPU miner.
 $script:CodedExplicitCudaBeta = $false
-if ($Beta) {
-  if (([string]$Backend).Trim().ToLowerInvariant() -eq "cuda") {
-    $script:CodedExplicitCudaBeta = $true
+$explicitCuda = (([string]$Backend).Trim().ToLowerInvariant() -eq "cuda")
+$explicitBeta = [bool]$Beta
+foreach ($arg in @($ExtraArgs)) {
+  $token = ([string]$arg).Trim().ToLowerInvariant()
+  if ($token -in @("-cuda","--cuda") -or $token -eq "-backend=cuda" -or $token -eq "--backend=cuda") {
+    $explicitCuda = $true
   }
-  foreach ($arg in @($ExtraArgs)) {
-    $token = ([string]$arg).Trim().ToLowerInvariant()
-    if ($token -in @("-cuda","--cuda") -or $token -eq "-backend=cuda" -or $token -eq "--backend=cuda") {
-      $script:CodedExplicitCudaBeta = $true
-    }
+  if ($token -in @("-beta","--beta")) {
+    $explicitBeta = $true
   }
 }
+$script:CodedExplicitCudaBeta = $explicitCuda -and $explicitBeta
 $CodedPublicRunnerBaseCommit = "63dc0f0cbb49124457a065770811a197887c5fa9"
 $CodedPublicRunnerBaseUrl = "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/$CodedPublicRunnerBaseCommit/run-base-v233.ps1"
 $env:CODED_RUNTIME_POLICY_SCHEMA = "coded.runtime.policy.v1"
