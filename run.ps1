@@ -34,7 +34,7 @@ foreach ($arg in @($ExtraArgs)) {
   }
 }
 $script:CodedExplicitCudaBeta = $explicitCuda -and $explicitBeta
-$CodedPublicRunnerBaseCommit = "b5c9c6b43f7e459677e8a8efb7cd4369034fe56c"
+$CodedPublicRunnerBaseCommit = "7db192197c11c030679198bdd8052f2edcfa2662"
 $CodedPublicRunnerBaseUrl = "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/$CodedPublicRunnerBaseCommit/run-base-v233.ps1"
 $env:CODED_RUNTIME_POLICY_SCHEMA = "coded.runtime.policy.v1"
 
