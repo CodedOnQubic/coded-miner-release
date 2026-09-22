@@ -1238,6 +1238,21 @@ if ($selected -eq "cuda") {
   if ($cudaTaskSha -ne "0c5e9e42c6d86c320af62f4125ca85b2446f2b098893fd6521bcf66c22f7f00a") {
     throw "CUDA beta packaged task authority mismatch"
   }
+  $cudaGpuIdentity = "unknown"
+  try {
+    $cudaGpu = Get-WmiObject Win32_VideoController -ErrorAction SilentlyContinue |
+      Where-Object { $_.Name -and ([string]$_.Name) -match "NVIDIA" } |
+      Select-Object -First 1
+    if ($cudaGpu) {
+      $cudaGpuIdentity = (
+        ([string]$cudaGpu.PNPDeviceID) + "|" +
+        ([string]$cudaGpu.DriverVersion) + "|" +
+        ([string]$cudaGpu.Name)
+      )
+    }
+  } catch {}
+  $cudaCacheEligible = $cudaGpuIdentity -ne "unknown"
+
   $cudaGateRoot = Join-Path $root "cuda-golden"
   New-Item -ItemType Directory -Force $cudaGateRoot | Out-Null
   $cudaGateKey = if ($CurrentCommit) { $CurrentCommit } else { $CurrentVersion }
@@ -1249,12 +1264,14 @@ if ($selected -eq "cuda") {
     try {
       $cached = Get-Content $cudaStamp -Raw | ConvertFrom-Json
       $cudaStampValid = (
+        $cudaCacheEligible -and
         $cached.golden_passed -eq $true -and
         [string]$cached.release_commit -eq [string]$CurrentCommit -and
         [string]$cached.ptx_sha256 -eq $cudaPtxSha -and
         [string]$cached.golden_gate_sha256 -eq $cudaGateExeSha -and
         [string]$cached.golden_sha256 -eq $cudaGoldenSha -and
-        [string]$cached.task_sha256 -eq $cudaTaskSha
+        [string]$cached.task_sha256 -eq $cudaTaskSha -and
+        [string]$cached.gpu_identity -eq $cudaGpuIdentity
       )
     } catch { $cudaStampValid = $false }
   }
@@ -1279,6 +1296,7 @@ if ($selected -eq "cuda") {
       golden_gate_sha256 = $cudaGateExeSha
       golden_sha256 = $cudaGoldenSha
       task_sha256 = $cudaTaskSha
+      gpu_identity = $cudaGpuIdentity
       golden_passed = $true
       architecture = "blackwell"
       passed_at = (Get-Date).ToUniversalTime().ToString("o")
