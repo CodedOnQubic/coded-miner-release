@@ -1232,7 +1232,12 @@ if ($selected -eq "cuda") {
   $env:CODED_BPP9000_EXPECTED_TASK_SHA256 = "0c5e9e42c6d86c320af62f4125ca85b2446f2b098893fd6521bcf66c22f7f00a"
 
   $cudaPtxSha = (Get-FileHash -Algorithm SHA256 $cudaPtx).Hash.ToLowerInvariant()
+  $cudaGateExeSha = (Get-FileHash -Algorithm SHA256 $cudaGolden).Hash.ToLowerInvariant()
   $cudaGoldenSha = (Get-FileHash -Algorithm SHA256 $cudaGoldenMeta).Hash.ToLowerInvariant()
+  $cudaTaskSha = (Get-FileHash -Algorithm SHA256 $cudaTask).Hash.ToLowerInvariant()
+  if ($cudaTaskSha -ne "0c5e9e42c6d86c320af62f4125ca85b2446f2b098893fd6521bcf66c22f7f00a") {
+    throw "CUDA beta packaged task authority mismatch"
+  }
   $cudaGateRoot = Join-Path $root "cuda-golden"
   New-Item -ItemType Directory -Force $cudaGateRoot | Out-Null
   $cudaGateKey = if ($CurrentCommit) { $CurrentCommit } else { $CurrentVersion }
@@ -1247,7 +1252,9 @@ if ($selected -eq "cuda") {
         $cached.golden_passed -eq $true -and
         [string]$cached.release_commit -eq [string]$CurrentCommit -and
         [string]$cached.ptx_sha256 -eq $cudaPtxSha -and
-        [string]$cached.golden_sha256 -eq $cudaGoldenSha
+        [string]$cached.golden_gate_sha256 -eq $cudaGateExeSha -and
+        [string]$cached.golden_sha256 -eq $cudaGoldenSha -and
+        [string]$cached.task_sha256 -eq $cudaTaskSha
       )
     } catch { $cudaStampValid = $false }
   }
@@ -1269,7 +1276,9 @@ if ($selected -eq "cuda") {
       release_commit = [string]$CurrentCommit
       release_version = [string]$CurrentVersion
       ptx_sha256 = $cudaPtxSha
+      golden_gate_sha256 = $cudaGateExeSha
       golden_sha256 = $cudaGoldenSha
+      task_sha256 = $cudaTaskSha
       golden_passed = $true
       architecture = "blackwell"
       passed_at = (Get-Date).ToUniversalTime().ToString("o")
