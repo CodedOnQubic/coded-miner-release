@@ -215,8 +215,31 @@ if ($ExtraArgs -and $ExtraArgs.Count -gt 0) { $params["ExtraArgs"] = [string[]]$
 # Every retry re-resolves the beta channel inside the proven delegate, so a
 # later fixed Build Beta recovers the rig without another CMD invocation.
 if ($script:CodedExplicitCudaBeta) {
+  $childArgs = @(
+    "-NoProfile",
+    "-ExecutionPolicy", "Bypass",
+    "-File", $delegate,
+    "-Wallet", $Wallet,
+    "-Worker", $Worker,
+    "-Threads", [string]$Threads,
+    "-Backend", "cuda",
+    "-Beta"
+  )
+  if ($Pool) {
+    $childArgs += @("-Pool", $Pool)
+  }
+  foreach ($arg in @($ExtraArgs)) {
+    if (!$arg) { continue }
+    $token = ([string]$arg).Trim().ToLowerInvariant()
+    if ($token -in @("-cuda","--cuda","-beta","--beta")) { continue }
+    if ($token -match '^--?backend=') { continue }
+    $childArgs += [string]$arg
+  }
+
   while ($true) {
-    & $delegate @params
+    # Isolate the delegate in a child PowerShell. Its historical 'exit'
+    # statements can never terminate this one-shot remote supervisor.
+    & powershell.exe @childArgs
     $rc = $LASTEXITCODE
     Write-Host ("CUDA beta runner ended rc=" + $rc + "; retrying channel in 60s...")
     Start-Sleep -Seconds 60
