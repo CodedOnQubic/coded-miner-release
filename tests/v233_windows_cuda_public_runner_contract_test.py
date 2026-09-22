@@ -16,6 +16,9 @@ for token in (
     'run-base-v233.ps1',
     'M1091V233_WINDOWS_CUDA_REMOTE_ONE_SHOT_SUPERVISOR',
     'retrying channel in 60s',
+    '& powershell.exe @childArgs',
+    '"-Backend", "cuda"',
+    '"-Beta"',
 ):
     assert token in wrapper, token
 
