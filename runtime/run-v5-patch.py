@@ -14,6 +14,114 @@ LEGACY_TASK_SHA = "403e24225f5b0512d0cbf49758fed9a01e7334d3cea565ad6c5e82420b713
 SOLUTION_AUTHORITY_V3_TASK_SHA = "0c5e9e42c6d86c320af62f4125ca85b2446f2b098893fd6521bcf66c22f7f00a"
 
 
+def linux_v1306(text: str) -> str:
+    """Extend only the pinned lifecycle; no second supervisor/updater."""
+    for cpu in ('avx2', 'avx512'):
+        text = replace_once(text, f'-{cpu}) BACKEND="{cpu}" ;;',
+                            f'-{cpu}) CODED_PUBLIC_CPU_REQUEST={cpu}; BACKEND={cpu} ;;', 'CPU selector')
+    text = replace_once(text, 'while [ $# -gt 0 ]; do\n  case "$1" in\n    -avx2)',
+        '''# CODED_LINUX_V1306_PUBLIC_ARGUMENTS
+CODED_PUBLIC_GPU_REQUEST=0
+CODED_PUBLIC_GPU_ONLY_REQUEST=0
+CODED_PUBLIC_CPU_REQUEST=auto
+CODED_PUBLIC_THREADS_EXPLICIT=0
+export PYTHONDONTWRITEBYTECODE=1
+[ -z "${CODED_THREADS:-}" ] && [ "${THREADS:-0}" = 0 ] || CODED_PUBLIC_THREADS_EXPLICIT=1
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -gpu|--gpu) CODED_PUBLIC_GPU_REQUEST=1 ;;
+    -gpu_only|--gpu-only) CODED_PUBLIC_GPU_ONLY_REQUEST=1 ;;
+    --threads|-t)
+      shift; [ $# -gt 0 ] || exit 64
+      THREADS="$1"; CODED_PUBLIC_THREADS_EXPLICIT=1 ;;
+    -avx2)''', 'Linux backend arguments')
+    text = replace_once(text, '\nWALLET="${WALLET:-${QUBIC_WALLET:-${CODED_WALLET:-}}}"', '''
+# CPU selection and GPU enablement are independent, order-independent inputs.
+case "$BACKEND" in avx2|avx512) CODED_PUBLIC_CPU_REQUEST="$BACKEND" ;; esac
+if [ "$CODED_PUBLIC_GPU_ONLY_REQUEST" = 1 ]; then
+  [ "$CODED_PUBLIC_GPU_REQUEST" = 0 ] && [ "$CODED_PUBLIC_CPU_REQUEST" = auto ] || {
+    echo 'ERROR: conflicting GPU-only and CPU/Hybrid arguments' >&2; exit 64;
+  }
+  BACKEND=cuda
+elif [ "$CODED_PUBLIC_GPU_REQUEST" = 1 ]; then BACKEND=hybrid
+fi
+export CODED_PUBLIC_CPU_REQUEST CODED_PUBLIC_THREADS_EXPLICIT
+WALLET="${WALLET:-${QUBIC_WALLET:-${CODED_WALLET:-}}}"''', 'Linux resolved request')
+    # Numeric shorthand/equal-form thread options also count as explicit.
+    for anchor in ('-[0-9]*) THREADS="${1#-}" ;;', '--threads=*) THREADS="${1#--threads=}" ;;', '-t=*) THREADS="${1#-t=}" ;;'):
+        text = replace_once(text, anchor, anchor[:-3] + '; CODED_PUBLIC_THREADS_EXPLICIT=1 ;;', 'explicit Linux threads')
+    text = replace_once(text, 'pick_exe() {\n', '''pick_exe() {
+  if [ "$PLATFORM" = linux-amd64 ] && [ -f "$INSTALL_DIR/linux_v1306_runtime.py" ]; then
+    python3 -B "$INSTALL_DIR/linux_v1306_runtime.py" --root "$INSTALL_DIR" --backend "$BACKEND" --threads "$THREADS" --select-only
+    return $?
+  fi
+  case "$BACKEND" in cuda|hybrid)
+    echo 'ERROR: requested GPU mode has no qualified current-profile runtime' >&2; return 1 ;;
+  esac
+''', 'Linux native executable selection')
+    text = replace_once(text, '# M1091V55F: install terminal traps before first runtime child starts.', '''# CODED_LINUX_V1306_NATIVE_ACTIVATION
+if [ "$PLATFORM" = linux-amd64 ] && [ -f "$INSTALL_DIR/linux_v1306_runtime.py" ]; then
+  CODED_ANT_V3_STATE_DIR="$STATE_DIR/ant-v3"
+  [ ! -L "$CODED_ANT_V3_STATE_DIR" ] || exit 66
+  mkdir -p "$CODED_ANT_V3_STATE_DIR"
+  exec 207>"$CODED_ANT_V3_STATE_DIR/.runtime-mode.lock"
+  flock -n 207 || { echo 'ERROR: native state owner already running' >&2; exit 75; }
+  export WALLET WORKER
+  activation="$(mktemp "$STATE_DIR/.native-activation.XXXXXX")"
+  python3 -B "$INSTALL_DIR/linux_v1306_runtime.py" --root "$INSTALL_DIR" --backend "$BACKEND" --threads "$THREADS" \\
+    --state "$CODED_ANT_V3_STATE_DIR" --lease-fd 207 > "$activation" || exit 66
+  source "$activation"
+  rm -f "$activation"
+  # A parent-owned update can inherit old build labels. Replace every source
+  # input with the verified installed manifest; never mix two release SHAs.
+  export CODED_MINER_COMMIT="$CODED_SOURCE_COMMIT" GIT_COMMIT="$CODED_SOURCE_COMMIT"
+  export CODED_EXPECTED_RELEASE_COMMIT="$CODED_SOURCE_COMMIT"
+  CODED_RELEASE_VERSION="$(python3 -B - "$INSTALL_DIR/release_manifest.json" "$CODED_SOURCE_COMMIT" <<'PYV1306VERSION'
+import json,re,sys
+version=json.load(open(sys.argv[1]))['version']
+assert re.fullmatch(r'[A-Za-z0-9_.+-]+',version) and sys.argv[2] in version
+print(version)
+PYV1306VERSION
+)" || exit 66
+  export CODED_RELEASE_VERSION CODED_MINER_VERSION="$CODED_RELEASE_VERSION"
+  export CODED_BPP9000_WORKER_INDEX_BASE=0 CODED_CUDA_WORKERS=8 CODED_CUDA_V1306_THREADS=64
+  export CODED_ROUTER_PROFILE=ant_v3_live CODED_ARCHITECTURE=x86_64 CODED_CPU_ARCH=x86_64
+  export CODED_BUILD_TARGET="linux-amd64-$SELECTED_BACKEND"
+  unset CODED_THRESHOLD THRESHOLD
+  # Legacy env blocks below require a value, but native scoring reads only
+  # Qatum's job threshold. Do not advertise a fabricated static threshold.
+  THRESHOLD=dynamic_from_qatum_v3
+  export CODED_ANALYTICS2_REQUIRE_PID_ELF=1 CODED_ANALYTICS2_REQUIRE_NATIVE_FRAME=YES CODED_MINER_BINARY="$MINER_EXE"
+  export CODED_ANALYTICS2_REQUIRE_PROCESS_OWNER=YES CODED_RUNTIME_SIDECAR_PARENT_PID="$$"
+fi
+
+# M1091V55F: install terminal traps before first runtime child starts.''', 'Linux V3 activation')
+    text = replace_once(text, 'MINER_PID=$!\necho "$MINER_PID" > "$PID_DIR/miner.pid"',
+        'MINER_PID=$!\nexport CODED_MINER_PID="$MINER_PID" CODED_RUNTIME_PROCESS_ID="$MINER_PID"\necho "$MINER_PID" > "$PID_DIR/miner.pid"', 'native PID binding')
+    stop_start = text.index('coded_m1091v55f_stop_child_single() {')
+    stop_end = text.index('# M1091V55F_R3_DESCENDANT_GROUP_CLEANUP_BEGIN', stop_start)
+    stop = text[stop_start:stop_end]
+    patched_stop = replace_once(stop, '    if [ "$tick" -ge 20 ]; then', '''    # A native mode change requires a drained durable checkpoint. This is
+    # bounded; a killed/ambiguous process cannot fabricate a handoff receipt.
+    local limit=20
+    if [ "${CODED_NATIVE_MODE_HANDOFF:-0}" = 1 ] && [ "$pid" = "${MINER_PID:-}" ]; then limit=500; fi
+    if [ "$tick" -ge "$limit" ]; then''', 'native bounded drain')
+    text = text[:stop_start] + patched_stop + text[stop_end:]
+    for start, end in (('coded_m1091v51p_kill_current_public_children() {', 'coded_m1091v55b_quiet_stop_public_children() {'),
+                       ('coded_m1091v55b_quiet_stop_public_children() {', '# M1091V55F_PUBLIC_SIGNAL_TREE_CLEANUP_BEGIN')):
+        begin = text.index(start)
+        finish = text.index(end, begin)
+        old = text[begin:finish]
+        # Preserve the legacy implementation for non-current packages.
+        text = text[:begin] + old.replace('\n', '''
+  if [ "${CODED_NATIVE_MODE_HANDOFF:-0}" = 1 ]; then
+    coded_m1091v55f_cleanup_children update
+    return 0
+  fi
+''', 1) + text[finish:]
+    return text
+
+
 def replace_once(text: str, anchor: str, replacement: str, label: str) -> str:
     if text.count(anchor) != 1:
         raise RuntimeError(f"{label}: expected exactly one anchor, found {text.count(anchor)}")
@@ -42,6 +150,12 @@ def transform(text: str, console_url: str) -> str:
 coded_m1091v64c_refresh_public_console() {
   local target tmp url
   target="$INSTALL_DIR/coded-public-console.py"
+  # Current packages contain the native-frame console tied to their source.
+  # Never overwrite that file with the legacy V5 console from raw main.
+  if [ -f "$INSTALL_DIR/linux_v1306_runtime.py" ]; then
+    [ -s "$target" ] || exit 88
+    return 0
+  fi
   tmp="${target}.v64.$$"
   url="__CONSOLE_URL__"
   rm -f "$tmp" 2>/dev/null || true
@@ -359,7 +473,7 @@ coded_ui_loader 82 "Starting analytics heartbeat"'''
     ):
         if marker not in text:
             raise RuntimeError("generated runner marker missing: " + marker)
-    return text
+    return linux_v1306(text)
 
 
 def self_test() -> None:
@@ -385,6 +499,31 @@ sleep 3
 
 coded_ui_loader 82 "Starting analytics heartbeat"
 expected_task_sha="''' + LEGACY_TASK_SHA + '''"
+BACKEND=auto
+THREADS=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -avx2) BACKEND="avx2" ;;
+    -avx512) BACKEND="avx512" ;;
+    -[0-9]*) THREADS="${1#-}" ;;
+    --threads=*) THREADS="${1#--threads=}" ;;
+    -t=*) THREADS="${1#-t=}" ;;
+  esac
+  shift
+done
+WALLET="${WALLET:-${QUBIC_WALLET:-${CODED_WALLET:-}}}"
+pick_exe() {
+  :
+}
+coded_m1091v55b_quiet_stop_public_children() {
+  :
+}
+# M1091V55F_PUBLIC_SIGNAL_TREE_CLEANUP_BEGIN
+coded_m1091v55f_stop_child_single() {
+    if [ "$tick" -ge 20 ]; then break; fi
+}
+# M1091V55F_R3_DESCENDANT_GROUP_CLEANUP_BEGIN
+# M1091V55F: install terminal traps before first runtime child starts.
 '''
     out = transform(fixture, "https://example.invalid/console.py")
     assert LEGACY_TASK_SHA not in out

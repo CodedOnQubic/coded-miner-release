@@ -8,16 +8,22 @@
 
 set -Eeuo pipefail
 
-# Apple Silicon bootstraps with stock macOS tools before any Python lookup.
-# Linux retains the existing proven runner/policy path below unchanged.
-if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]; then
+# Stage the new profile on explicit Beta only. Public Latest retains its
+# established launcher until the same qualified SHA is manually promoted.
+coded_mac_native_beta=0
+case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in 1|yes|true|beta) coded_mac_native_beta=1 ;; esac
+for coded_mac_arg in "$@"; do
+  case "$coded_mac_arg" in -beta|--beta) coded_mac_native_beta=1 ;; -latest|--latest) coded_mac_native_beta=0 ;; esac
+done
+# Apple Silicon Beta bootstraps before any host Python lookup.
+if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 && "$coded_mac_native_beta" == 1 ]]; then
   if [[ "${CODED_ALLOW_FEATURE_VALIDATION:-0}" == 1 && -n "${CODED_MAC_BOOTSTRAP_LOCAL:-}" ]]; then
     [[ "$CODED_MAC_BOOTSTRAP_LOCAL" = /* && -f "$CODED_MAC_BOOTSTRAP_LOCAL" ]] || exit 64
     echo 'MACOS_BOOTSTRAP_QUALIFICATION_OVERRIDE=1'
     exec /bin/bash "$CODED_MAC_BOOTSTRAP_LOCAL" "$@"
   fi
-  mac_bootstrap_commit=1408b11cd96522f4483d4bcb0ca9d3e133ec972b
-  mac_bootstrap_sha=4e8c5a37ec9e24fecf66c880a03888b99830d44913db4621abe49b82d2c56079
+  mac_bootstrap_commit=28df0d7f9afd7f7e617ff09db696793f83f09dbe
+  mac_bootstrap_sha=efc7a6bdda403a6e31823bd40360fdebe3e575dfa1f90d5d221453be5f20039d
   mac_bootstrap_dir="$HOME/.coded-miner/bootstrap"
   umask 077
   mkdir -p "$mac_bootstrap_dir"
@@ -234,7 +240,7 @@ PYQ
   filtered=()
   for arg in "$@"; do
     case "$arg" in
-      -auto|-scalar|-avx2|-avx512|-neon|-metal|-cuda|-hybrid|--backend=*|-backend=*) ;;
+      -auto|-scalar|-avx2|-avx512|-neon|-metal|-cuda|-hybrid|-gpu|--gpu|-gpu_only|--gpu-only|--backend=*|-backend=*) ;;
       *) filtered+=("$arg") ;;
     esac
   done
