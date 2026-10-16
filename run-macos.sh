@@ -68,7 +68,7 @@ cache="$cache_parent/$version"
 check_package() {
   local directory="$1"
   [[ -x "$directory/coded-miner/python/bin/python3" && -f "$directory/coded-miner/coded-package-check.py" ]] || return 1
-  "$directory/coded-miner/python/bin/python3" -I "$directory/coded-miner/coded-package-check.py" "$directory/coded-miner" "$commit" "$version"
+  "$directory/coded-miner/python/bin/python3" -I -B "$directory/coded-miner/coded-package-check.py" "$directory/coded-miner" "$commit" "$version"
 }
 if [[ ! -d "$cache" ]]; then
   curl -fsSL --connect-timeout 5 --max-time 30 "$release_api/$version" -o "$stage/release.json"
@@ -95,7 +95,7 @@ if [[ ! -d "$cache" ]]; then
   check_package "$stage" || { echo 'ERROR: incomplete/unqualified native package' >&2; exit 69; }
   # Atomic installation without overwriting any prior package or nesting one
   # staging tree inside a concurrently installed cache directory.
-  "$stage/coded-miner/python/bin/python3" -I -c 'import os,sys
+  "$stage/coded-miner/python/bin/python3" -I -B -c 'import os,sys
 try: os.rename(sys.argv[1],sys.argv[2])
 except OSError:
     if not os.path.isdir(sys.argv[2]): raise' "$stage" "$cache"
