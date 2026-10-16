@@ -8,6 +8,36 @@
 
 set -Eeuo pipefail
 
+# Apple Silicon bootstraps with stock macOS tools before any Python lookup.
+# Linux retains the existing proven runner/policy path below unchanged.
+if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]]; then
+  if [[ "${CODED_ALLOW_FEATURE_VALIDATION:-0}" == 1 && -n "${CODED_MAC_BOOTSTRAP_LOCAL:-}" ]]; then
+    [[ "$CODED_MAC_BOOTSTRAP_LOCAL" = /* && -f "$CODED_MAC_BOOTSTRAP_LOCAL" ]] || exit 64
+    echo 'MACOS_BOOTSTRAP_QUALIFICATION_OVERRIDE=1'
+    exec /bin/bash "$CODED_MAC_BOOTSTRAP_LOCAL" "$@"
+  fi
+  mac_bootstrap_commit=89ccae90244010de13df20ad8e31be2d4d346402
+  mac_bootstrap_sha=4dfb736eda8ea008263eccde6d8db87a8084174c2a73d716fec489ff99e8193b
+  mac_bootstrap_dir="$HOME/.coded-miner/bootstrap"
+  umask 077
+  mkdir -p "$mac_bootstrap_dir"
+  mac_bootstrap="$mac_bootstrap_dir/run-macos-$mac_bootstrap_commit.sh"
+  if [[ ! -f "$mac_bootstrap" ]]; then
+    mac_bootstrap_tmp="$(mktemp "$mac_bootstrap_dir/.download.XXXXXX")"
+    /usr/bin/curl -fsSL --connect-timeout 5 --max-time 30 \
+      "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/$mac_bootstrap_commit/run-macos.sh" \
+      -o "$mac_bootstrap_tmp"
+    [[ "$(/usr/bin/shasum -a 256 "$mac_bootstrap_tmp" | /usr/bin/awk '{print $1}')" == "$mac_bootstrap_sha" ]] || {
+      echo 'ERROR: Mac bootstrap checksum mismatch' >&2; exit 69;
+    }
+    /bin/mv "$mac_bootstrap_tmp" "$mac_bootstrap"
+  fi
+  [[ "$(/usr/bin/shasum -a 256 "$mac_bootstrap" | /usr/bin/awk '{print $1}')" == "$mac_bootstrap_sha" ]] || {
+    echo 'ERROR: cached Mac bootstrap checksum mismatch' >&2; exit 69;
+  }
+  exec /bin/bash "$mac_bootstrap" "$@"
+fi
+
 CODED_PUBLIC_RUNNER_BASE_COMMIT="5e898b60779ea163b07bb44dd7a3e1186b414f8b"
 CODED_PUBLIC_RUNNER_BASE_URL="https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/${CODED_PUBLIC_RUNNER_BASE_COMMIT}/run.sh"
 CODED_RUNTIME_POLICY_SCHEMA="coded.runtime.policy.v1"
