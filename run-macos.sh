@@ -7,6 +7,7 @@ export PYTHONDONTWRITEBYTECODE=1
 unset PYTHONHOME PYTHONUSERBASE PYTHONPATH
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || { echo 'ERROR: Apple Silicon macOS required' >&2; exit 65; }
 channel=latest
+case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in 1|yes|true|beta) channel=beta ;; esac
 backend=neon
 selected=""
 threads=0
@@ -59,6 +60,20 @@ if [[ "$channel" == beta ]]; then prefix=beta; alias=coded-miner-macos-arm64-bet
 else prefix=public_latest; alias=coded-miner-macos-arm64-latest.tar.gz; fi
 version="$(plutil -extract "$prefix.version" raw -o - "$stage/channel.json")"
 commit="$(plutil -extract "$prefix.commit" raw -o - "$stage/channel.json")"
+status="$(plutil -extract "$prefix.status" raw -o - "$stage/channel.json" 2>/dev/null || true)"
+release_stage="$(plutil -extract "$prefix.stage" raw -o - "$stage/channel.json" 2>/dev/null || true)"
+for readiness in "$status" "$release_stage"; do
+  case "$readiness" in ''|completed|complete|ok|ready|published|active) ;;
+    *) echo 'ERROR: Mac channel is not ready; refusing partial release' >&2; exit 69 ;;
+  esac
+done
+if [[ "$channel" == beta ]]; then
+  disabled="$(plutil -extract beta_disabled.disabled raw -o - "$stage/channel.json" 2>/dev/null || true)"
+  disabled_commit="$(plutil -extract beta_disabled.commit raw -o - "$stage/channel.json" 2>/dev/null || true)"
+  if [[ "$disabled" == true && ( -z "$disabled_commit" || "$disabled_commit" == "$commit" ) ]]; then
+    echo 'ERROR: selected Beta is disabled; refusing channel fallback' >&2; exit 69
+  fi
+fi
 mac_ready="$(plutil -extract "$prefix.assets.macos.ok" raw -o - "$stage/channel.json" 2>/dev/null || true)"
 [[ "$version" =~ ^[A-Za-z0-9_.+-]+$ && "$commit" =~ ^[0-9a-f]{40}$ && "$mac_ready" == true ]] || {
   echo "ERROR: no qualified native Mac package on $channel; refusing legacy/channel fallback" >&2; exit 69;
