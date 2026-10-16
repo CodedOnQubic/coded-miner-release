@@ -2,12 +2,17 @@
 
 The official Qubic Miner for the CODED mining pool.
 
-## Next unified Beta — release qualification pending
+## Unified Beta — Hive, Linux and Apple Silicon
 
-The following is the new Beta contract, **not a claim that the combined release
-is already published**. Wait for the Admin release to complete. Public Latest
-and its existing launchers are unchanged; Windows CUDA/Hybrid qualification is
-deferred. Do not install Windows over a Hive disk for testing.
+The combined Beta is published from Anthill
+`36247067379f25f28ef71305c854010b1cf966f3`.
+[Qualified Linux/Hive and Mac packages](https://github.com/CodedOnQubic/coded-miner-release/releases/tag/v1.0-ant-v3-unified-beta-36247067379f25f28ef71305c854010b1cf966f3-20261016T154443Z)
+share that source identity. RTX 3070/5070 each passed all five Linux package
+modes; M2 Pro/M3 Pro each passed NEON, Metal and Hybrid with real jobs and
+network submission disabled during qualification.
+
+Public Latest and its existing launchers are unchanged. Windows CUDA/Hybrid
+qualification is deferred; do not install Windows over a Hive disk for testing.
 
 | Explicit Beta mode | Linux x86-64 | Apple Silicon Mac |
 | --- | --- | --- |
@@ -33,7 +38,7 @@ Xcode, Metal compiler or host Python is required. M2 Pro and M3 Pro are the
 tested hardware; other Apple Silicon generations are not asserted qualified
 solely from architecture compatibility.
 
-Hive Extra Config for that completed Beta:
+Hive Extra Config:
 
 ```json
 {"beta":"yes"}
@@ -53,20 +58,29 @@ CPU + GPU Hybrid:
 
 Do not switch an old GPU-only cursor into Hybrid by copying or deleting state.
 The existing native drain/checkpoint and guarded state conversion must finish.
+Every Beta client follows the same completed, qualified Beta release through
+its existing autoupdater. A new Beta source/release updates CPU clients too,
+even when that release did not change their CPU scorer. CPU/GPU mode remains
+explicit; updating never turns a CPU-only configuration into Hybrid. Historical
+per-rig canary pins must be deliberately retired before those rigs follow the
+global channel. Failed/incomplete builds are not channel authority. There is
+one successful Beta per exact Anthill SHA; timestamps do not authorize rebuilding
+an already successful source identity. Latest promotion is separate and manual.
+
 The console separates FOUND, POOL acceptance and independently proven NET
 acceptance. Analytics2 rates come from the actual native process, not a sidecar
 estimate. Closing the miner must stop its owned telemetry process as well.
 
 ---
 
-## 👁️🔥 Beta Release
+## Public Latest — legacy channel, unchanged
 
-* Linux / Windows / Mac ARM supported
+* Existing Linux / Windows / Mac ARM launchers
 * HiveOS supported
 * Performance still evolving
 * CPU mining only
 * Automatic backend detection: AVX512 → AVX2 → Scalar
-* CUDA backend not active yet
+* The new CUDA/Hybrid/native Mac profile above requires explicit `--beta`
 
 ---
 
