@@ -8,6 +8,42 @@
 
 set -Eeuo pipefail
 
+# Stage the new profile on explicit Beta only. Public Latest retains its
+# established launcher until the same qualified SHA is manually promoted.
+coded_mac_native_beta=0
+case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in 1|yes|true|beta) coded_mac_native_beta=1 ;; esac
+for coded_mac_arg in "$@"; do
+  case "$coded_mac_arg" in -beta|--beta) coded_mac_native_beta=1 ;; -latest|--latest) coded_mac_native_beta=0 ;; esac
+done
+# Apple Silicon Beta bootstraps before any host Python lookup.
+if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 && "$coded_mac_native_beta" == 1 ]]; then
+  if [[ "${CODED_ALLOW_FEATURE_VALIDATION:-0}" == 1 && -n "${CODED_MAC_BOOTSTRAP_LOCAL:-}" ]]; then
+    [[ "$CODED_MAC_BOOTSTRAP_LOCAL" = /* && -f "$CODED_MAC_BOOTSTRAP_LOCAL" ]] || exit 64
+    echo 'MACOS_BOOTSTRAP_QUALIFICATION_OVERRIDE=1'
+    exec /bin/bash "$CODED_MAC_BOOTSTRAP_LOCAL" "$@"
+  fi
+  mac_bootstrap_commit=28df0d7f9afd7f7e617ff09db696793f83f09dbe
+  mac_bootstrap_sha=efc7a6bdda403a6e31823bd40360fdebe3e575dfa1f90d5d221453be5f20039d
+  mac_bootstrap_dir="$HOME/.coded-miner/bootstrap"
+  umask 077
+  mkdir -p "$mac_bootstrap_dir"
+  mac_bootstrap="$mac_bootstrap_dir/run-macos-$mac_bootstrap_commit.sh"
+  if [[ ! -f "$mac_bootstrap" ]]; then
+    mac_bootstrap_tmp="$(mktemp "$mac_bootstrap_dir/.download.XXXXXX")"
+    /usr/bin/curl -fsSL --connect-timeout 5 --max-time 30 \
+      "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/$mac_bootstrap_commit/run-macos.sh" \
+      -o "$mac_bootstrap_tmp"
+    [[ "$(/usr/bin/shasum -a 256 "$mac_bootstrap_tmp" | /usr/bin/awk '{print $1}')" == "$mac_bootstrap_sha" ]] || {
+      echo 'ERROR: Mac bootstrap checksum mismatch' >&2; exit 69;
+    }
+    /bin/mv "$mac_bootstrap_tmp" "$mac_bootstrap"
+  fi
+  [[ "$(/usr/bin/shasum -a 256 "$mac_bootstrap" | /usr/bin/awk '{print $1}')" == "$mac_bootstrap_sha" ]] || {
+    echo 'ERROR: cached Mac bootstrap checksum mismatch' >&2; exit 69;
+  }
+  exec /bin/bash "$mac_bootstrap" "$@"
+fi
+
 CODED_PUBLIC_RUNNER_BASE_COMMIT="5e898b60779ea163b07bb44dd7a3e1186b414f8b"
 CODED_PUBLIC_RUNNER_BASE_URL="https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/${CODED_PUBLIC_RUNNER_BASE_COMMIT}/run.sh"
 CODED_RUNTIME_POLICY_SCHEMA="coded.runtime.policy.v1"
@@ -204,7 +240,7 @@ PYQ
   filtered=()
   for arg in "$@"; do
     case "$arg" in
-      -auto|-scalar|-avx2|-avx512|-neon|-metal|-cuda|-hybrid|--backend=*|-backend=*) ;;
+      -auto|-scalar|-avx2|-avx512|-neon|-metal|-cuda|-hybrid|-gpu|--gpu|-gpu_only|--gpu-only|--backend=*|-backend=*) ;;
       *) filtered+=("$arg") ;;
     esac
   done

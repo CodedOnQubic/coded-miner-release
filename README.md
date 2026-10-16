@@ -2,6 +2,61 @@
 
 The official Qubic Miner for the CODED mining pool.
 
+## Next unified Beta — release qualification pending
+
+The following is the new Beta contract, **not a claim that the combined release
+is already published**. Wait for the Admin release to complete. Public Latest
+and its existing launchers are unchanged; Windows CUDA/Hybrid qualification is
+deferred. Do not install Windows over a Hive disk for testing.
+
+| Explicit Beta mode | Linux x86-64 | Apple Silicon Mac |
+| --- | --- | --- |
+| no GPU flag | CPU: AVX512 / AVX2 | CPU: NEON |
+| `-gpu` | CPU + CUDA Hybrid | NEON + Metal Hybrid |
+| `-gpu_only` | CUDA only | Metal only |
+
+CUDA currently targets qualified RTX 3070 (SM86) and RTX 5070 (SM120).
+Explicit GPU requests fail closed if the required qualified binary/device is
+missing; they do not silently select CPU. Linux Hybrid uses the reviewed fixed
+24 CPU + 32 CUDA worker geometry, not automatic performance tuning. CPU-only
+accepts `-avx2`, `-avx512` and a thread shorthand such as `-8`.
+
+Example Linux or Mac GPU-only Beta (replace the wallet and worker):
+
+```bash
+WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- --beta -gpu_only
+```
+
+Remove `-gpu_only` for CPU-only, or replace it with `-gpu` for Hybrid.
+Mac Beta packages include Python and a precompiled Metal library: no Homebrew,
+Xcode, Metal compiler or host Python is required. M2 Pro and M3 Pro are the
+tested hardware; other Apple Silicon generations are not asserted qualified
+solely from architecture compatibility.
+
+Hive Extra Config for that completed Beta:
+
+```json
+{"beta":"yes"}
+```
+
+CPU-only is the default. GPU-only:
+
+```json
+{"beta":"yes","gpu":"yes","cpu":"no"}
+```
+
+CPU + GPU Hybrid:
+
+```json
+{"beta":"yes","gpu":"yes"}
+```
+
+Do not switch an old GPU-only cursor into Hybrid by copying or deleting state.
+The existing native drain/checkpoint and guarded state conversion must finish.
+The console separates FOUND, POOL acceptance and independently proven NET
+acceptance. Analytics2 rates come from the actual native process, not a sidecar
+estimate. Closing the miner must stop its owned telemetry process as well.
+
 ---
 
 ## 👁️🔥 Beta Release
