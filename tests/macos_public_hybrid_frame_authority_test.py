@@ -4,6 +4,8 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import re
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 CONSOLE = ROOT / "runtime" / "coded-public-console-v5.py"
@@ -42,7 +44,15 @@ def main() -> int:
         os.environ.clear()
         os.environ.update(old)
 
-    runsh = RUNSH.read_text(encoding="utf-8")
+    entrypoint = RUNSH.read_text(encoding="utf-8")
+    # Latest still delegates to the immutable proven runner. Check the actual
+    # delegated source, not an obsolete assumption that it is inlined here.
+    pin = re.search(r'CODED_PUBLIC_RUNNER_BASE_COMMIT="([0-9a-f]{40})"', entrypoint)
+    require(pin is not None, "immutable legacy runner delegation missing")
+    require('exec bash "$coded_v70_base" "$@"' in entrypoint, "legacy argv delegation missing")
+    runsh = subprocess.check_output(
+        ["git", "-C", str(ROOT), "show", pin.group(1) + ":run.sh"], text=True,
+    )
     require("M1091V66_MAC_AUTO_REQUEST_AUTHORITY" in runsh, "public runner AUTO authority marker missing")
     require("CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT" in runsh, "caller request must be frozen before core detection")
     require(
@@ -53,6 +63,11 @@ def main() -> int:
         'backend_raw="${CODED_SELECTED_BACKEND:-' not in runsh,
         "execution-state labels must not be backend request authority",
     )
+    bootstrap = (ROOT / "run-macos.sh").read_text(encoding="utf-8")
+    require('"$coded_mac_native_beta" == 1' in entrypoint, "native bootstrap must remain Beta-only")
+    require("backend=neon" in bootstrap, "native Beta must default to CPU-only")
+    require("-gpu|--gpu|-hybrid) choose_backend hybrid" in bootstrap, "explicit Hybrid route missing")
+    require("-gpu_only|--gpu-only|-metal) choose_backend metal" in bootstrap, "GPU-only route missing")
 
     print("MACOS_PUBLIC_HYBRID_FRAME_AUTHORITY=PASS")
     print("public_default_request=auto")
