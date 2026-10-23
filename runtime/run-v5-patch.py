@@ -81,6 +81,7 @@ print(version)
 PYV1306VERSION
 )" || exit 66
   export CODED_RELEASE_VERSION CODED_MINER_VERSION="$CODED_RELEASE_VERSION"
+  export CODED_POOL_API_URL="${CODED_POOL_API_URL:-${POOL_API_URL:-https://api.codedonqubic.com}}"
   export CODED_BPP9000_WORKER_INDEX_BASE=0
   # CODED_LINUX_V1306_CUDA_PROFILE: use the integrity-checked package contract,
   # never inherit the predecessor's kernel geometry across an update.
@@ -274,7 +275,7 @@ PYCOMMIT
     effective_override = r'''# M1091V64B_PLATFORM_EXACT_BETA_AUTOUPDATE
 coded_m1091v51p_effective_release_line() {
   local pool status_json wants_beta
-  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
+  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-https://api.codedonqubic.com}}"
   wants_beta=0
   case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in
     1|yes|YES|true|TRUE|beta|BETA) wants_beta=1 ;;
@@ -354,7 +355,7 @@ coded_m1091v50h_try_beta() {
   coded_m1091v50h_beta_requested "$@" || return 1
 
   local pool channel_url status_json beta_line beta_version beta_commit beta_asset_name beta_url
-  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
+  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-https://api.codedonqubic.com}}"
   channel_url="${CODED_RELEASE_CHANNEL_STATUS_URL:-${pool%/}/admin/release/channel-status}"
   status_json="$(curl -fsSL --connect-timeout 5 --max-time 15 "${channel_url}?cb=$(date +%s)" 2>/dev/null || true)"
   [ -n "$status_json" ] || return 1

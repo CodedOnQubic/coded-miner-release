@@ -42,6 +42,11 @@ class PublicLinux(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, expected)
 
+    def test_public_control_plane_defaults_use_canonical_https(self):
+        source=(ROOT/'runtime/run-v5-patch.py').read_text()
+        self.assertNotIn('http://178.104.150.57:4000',source)
+        self.assertIn('export CODED_POOL_API_URL="${CODED_POOL_API_URL:-${POOL_API_URL:-https://api.codedonqubic.com}}"',self.text)
+
     def test_retired_gpu_arguments_fail_closed(self):
         for args in (['-gpu'], ['-gpu_only'], ['-avx2','-gpu'], ['-avx512','-gpu_only']):
             result = subprocess.run(['bash', '-s', '--', *args], input='BACKEND=auto\nTHREADS=0\n'+self.args, text=True, capture_output=True)
