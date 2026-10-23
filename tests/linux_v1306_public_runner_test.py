@@ -32,17 +32,17 @@ class PublicLinux(unittest.TestCase):
         self.assertIn('--lease-fd 207', self.text)
 
     def test_argument_matrix(self):
-        for args, expected in [([], 'auto|auto|0'), (['-gpu_only'], 'cuda|auto|0'),
-                (['-gpu'], 'hybrid|auto|0'), (['-avx2','-gpu'], 'hybrid|avx2|0'),
-                (['-gpu','-avx512'], 'hybrid|avx512|0'), (['-31'], 'auto|auto|1'),
-                (['--threads=8','-gpu_only'], 'cuda|auto|1')]:
+        for args, expected in [([], 'auto|auto|0'), (['-cuda'], 'cuda|auto|0'),
+                (['-avx2','-cuda'], 'hybrid|avx2|0'),
+                (['-cuda','-avx512'], 'hybrid|avx512|0'), (['-31'], 'auto|auto|1'),
+                (['--threads=8','-cuda'], 'cuda|auto|1')]:
             script = 'BACKEND=auto\nTHREADS=0\n'+self.args+'\nprintf "%s|%s|%s" "$BACKEND" "$CODED_PUBLIC_CPU_REQUEST" "$CODED_PUBLIC_THREADS_EXPLICIT"\n'
             result = subprocess.run(['bash', '-s', '--', *args], input=script, text=True, capture_output=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, expected)
 
-    def test_conflicting_gpu_requests_fail_closed(self):
-        for args in (['-gpu','-gpu_only'], ['-gpu_only','-avx2'], ['-avx512','-gpu_only']):
+    def test_retired_gpu_arguments_fail_closed(self):
+        for args in (['-gpu'], ['-gpu_only'], ['-avx2','-gpu'], ['-avx512','-gpu_only']):
             result = subprocess.run(['bash', '-s', '--', *args], input='BACKEND=auto\nTHREADS=0\n'+self.args, text=True, capture_output=True)
             self.assertNotEqual(result.returncode, 0)
 

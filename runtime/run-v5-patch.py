@@ -21,16 +21,15 @@ def linux_v1306(text: str) -> str:
                             f'-{cpu}) CODED_PUBLIC_CPU_REQUEST={cpu}; BACKEND={cpu} ;;', 'CPU selector')
     text = replace_once(text, 'while [ $# -gt 0 ]; do\n  case "$1" in\n    -avx2)',
         '''# CODED_LINUX_V1306_PUBLIC_ARGUMENTS
-CODED_PUBLIC_GPU_REQUEST=0
-CODED_PUBLIC_GPU_ONLY_REQUEST=0
+CODED_PUBLIC_CUDA_REQUEST=0
 CODED_PUBLIC_CPU_REQUEST=auto
 CODED_PUBLIC_THREADS_EXPLICIT=0
 export PYTHONDONTWRITEBYTECODE=1
 [ -z "${CODED_THREADS:-}" ] && [ "${THREADS:-0}" = 0 ] || CODED_PUBLIC_THREADS_EXPLICIT=1
 while [ $# -gt 0 ]; do
   case "$1" in
-    -gpu|--gpu) CODED_PUBLIC_GPU_REQUEST=1 ;;
-    -gpu_only|--gpu-only) CODED_PUBLIC_GPU_ONLY_REQUEST=1 ;;
+    -cuda|--cuda) CODED_PUBLIC_CUDA_REQUEST=1 ;;
+    -gpu|--gpu|-gpu_only|--gpu-only) echo 'ERROR: use -cuda, optionally with -avx2 or -avx512' >&2; exit 64 ;;
     --threads|-t)
       shift; [ $# -gt 0 ] || exit 64
       THREADS="$1"; CODED_PUBLIC_THREADS_EXPLICIT=1 ;;
@@ -38,12 +37,10 @@ while [ $# -gt 0 ]; do
     text = replace_once(text, '\nWALLET="${WALLET:-${QUBIC_WALLET:-${CODED_WALLET:-}}}"', '''
 # CPU selection and GPU enablement are independent, order-independent inputs.
 case "$BACKEND" in avx2|avx512) CODED_PUBLIC_CPU_REQUEST="$BACKEND" ;; esac
-if [ "$CODED_PUBLIC_GPU_ONLY_REQUEST" = 1 ]; then
-  [ "$CODED_PUBLIC_GPU_REQUEST" = 0 ] && [ "$CODED_PUBLIC_CPU_REQUEST" = auto ] || {
-    echo 'ERROR: conflicting GPU-only and CPU/Hybrid arguments' >&2; exit 64;
-  }
-  BACKEND=cuda
-elif [ "$CODED_PUBLIC_GPU_REQUEST" = 1 ]; then BACKEND=hybrid
+if [ "$CODED_PUBLIC_CUDA_REQUEST" = 1 ]; then
+  if [ "$CODED_PUBLIC_CPU_REQUEST" = auto ]; then BACKEND=cuda
+  else BACKEND=hybrid
+  fi
 fi
 export CODED_PUBLIC_CPU_REQUEST CODED_PUBLIC_THREADS_EXPLICIT
 WALLET="${WALLET:-${QUBIC_WALLET:-${CODED_WALLET:-}}}"''', 'Linux resolved request')

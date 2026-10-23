@@ -8,6 +8,27 @@
 
 set -Eeuo pipefail
 
+# coded.public.onboarding.v1: explicit CUDA, exclusive CPU selection, no
+# argument-order-dependent mode. Validate before downloads or policy lookups.
+coded_cpu_request=""
+coded_auto_request=0
+coded_cuda_request=0
+for coded_arg in "$@"; do
+  case "$coded_arg" in
+    -gpu|--gpu|-gpu_only|--gpu-only)
+      echo 'ERROR: use -cuda for GPU only, or -avx2/-avx512 together with -cuda for Hybrid.' >&2; exit 64 ;;
+    -avx2|--avx2|-avx512|--avx512)
+      coded_cpu="${coded_arg#-}"; coded_cpu="${coded_cpu#-}"
+      [[ -z "$coded_cpu_request" || "$coded_cpu_request" == "$coded_cpu" ]] || { echo 'ERROR: choose one CPU backend' >&2; exit 64; }
+      coded_cpu_request="$coded_cpu" ;;
+    -auto|--auto) coded_auto_request=1 ;;
+    -cuda|--cuda) coded_cuda_request=1 ;;
+  esac
+done
+if [[ "$coded_auto_request" == 1 && ( -n "$coded_cpu_request" || "$coded_cuda_request" == 1 ) ]]; then
+  echo 'ERROR: Auto is exclusive; select a CPU backend explicitly for Hybrid.' >&2; exit 64
+fi
+
 # Stage the new profile on explicit Beta only. Public Latest retains its
 # established launcher until the same qualified SHA is manually promoted.
 coded_mac_native_beta=0
