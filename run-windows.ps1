@@ -32,7 +32,8 @@ function Check-Package([string]$Root,[string]$Pin,[string]$Version) {
       -or $manifest.branch -ne 'coded-miner-1.0-anthill' -or $manifest.publishable_source -ne $true `
       -or $manifest.publication_authorized -ne $true -or $manifest.runtime_compilation -ne $false `
       -or $manifest.host_python_required -ne $false -or $manifest.population -ne 32 -or $manifest.ann_bytes -ne 1088 `
-      -or $manifest.windows_work_state_bank_enabled -ne $true -or $manifest.work_state_bank_reader_version -ne 3) {
+      -or $manifest.windows_work_state_bank_enabled -ne $true -or $manifest.work_state_bank_reader_version -ne 3 `
+      -or $manifest.cuda_abi -ne 3 -or $manifest.cuda_thread_selection -ne 'explicit-per-call-argument') {
     throw 'Qualified native Windows package contract missing.'
   }
   $hashes=Get-Content -LiteralPath (Join-Path $Root 'package-sha256.json') -Raw | ConvertFrom-Json
