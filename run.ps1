@@ -12,8 +12,8 @@ $ProgressPreference='SilentlyContinue'
 if ($ExtraArgs.Count) { throw 'Unsupported arguments. Use -Backend auto, avx2, avx512, cuda, avx2+cuda or avx512+cuda; retired -gpu/-gpu_only are removed.' }
 if ($env:OS -ne 'Windows_NT' -or ![Environment]::Is64BitProcess) { throw 'Windows x64 required.' }
 [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12
-$commit='14765abd4279b90c31854a880dfe18f1bd4ceae5'
-$expected='e16952109b128714ecf8e8c984145b26b903d589d203a73e712cc12b39cad1ca'
+$commit='843b0630fcc51a6b349257324f389fbc96ceb82c'
+$expected='d20a5825a54ff5e7672410349549b15c6be2d555d586010e5da4dd6fac022339'
 $base=Join-Path $env:LOCALAPPDATA 'CODED\bootstrap'
 New-Item -ItemType Directory -Force -Path $base | Out-Null
 $helper=Join-Path $base ('run-windows-'+$expected+'.ps1')
