@@ -81,7 +81,38 @@ print(version)
 PYV1306VERSION
 )" || exit 66
   export CODED_RELEASE_VERSION CODED_MINER_VERSION="$CODED_RELEASE_VERSION"
-  export CODED_BPP9000_WORKER_INDEX_BASE=0 CODED_CUDA_WORKERS=8 CODED_CUDA_V1306_THREADS=64
+  export CODED_BPP9000_WORKER_INDEX_BASE=0
+  # CODED_LINUX_V1306_CUDA_PROFILE: use the integrity-checked package contract,
+  # never inherit the predecessor's kernel geometry across an update.
+  cuda_profile_env="$(python3 -B - "$INSTALL_DIR/release_manifest.json" <<'PYCUDAPROFILE'
+import json,sys
+manifest=json.load(open(sys.argv[1]))
+profile=manifest.get('cuda_optimized_profile')
+workers=manifest.get('cuda_default_workers',8)
+assert type(workers) is int and workers==8, 'unqualified_cuda_worker_geometry'
+if profile is None:
+    threads=64;wait=60
+else:
+    assert isinstance(profile,dict) and type(profile.get('enabled')) is bool, 'invalid_cuda_profile'
+    enabled=profile['enabled'];threads=32 if enabled else 64;wait=120 if enabled else 60
+    expected={'schema':'coded.cuda.p32-build-profile.v1','enabled':enabled,
+        'threads_per_block':threads,'large_batch_collection_cap_ms':wait,
+        'register_state':enabled,'fixed_point':enabled,'exact_cycle':enabled,
+        'packed_lut':enabled,'undo_mutations':enabled,'cycle_index':enabled,
+        'cpu_geometry_changed':False,'cuda_geometry_changed':False,'hardware_qualification_implied':False}
+    assert profile==expected and all(type(profile[k]) is bool for k,v in expected.items() if type(v) is bool), 'invalid_cuda_profile'
+    assert not enabled or manifest.get('population')==32, 'optimized_cuda_requires_p32'
+    assert manifest.get('hybrid_profile',{}).get('partial_flush_ms')==wait, 'cuda_collection_contract_mismatch'
+assert manifest.get('cuda_default_threads_per_block',64)==threads, 'cuda_kernel_contract_mismatch'
+print('export CODED_CUDA_WORKERS='+str(workers))
+print('export CODED_CUDA_V1306_THREADS='+str(threads))
+# The compiled profile applies its larger cap only to large worker batches.
+# Do not turn that cap into an override for the eight-worker CUDA solo lane.
+print('unset CODED_CUDA_BATCH_WAIT_MS')
+PYCUDAPROFILE
+)" || exit 66
+  eval "$cuda_profile_env"
+  # CODED_LINUX_V1306_CUDA_PROFILE_END
   export CODED_ROUTER_PROFILE=ant_v3_live CODED_ARCHITECTURE=x86_64 CODED_CPU_ARCH=x86_64
   export CODED_BUILD_TARGET="linux-amd64-$SELECTED_BACKEND"
   unset CODED_THRESHOLD THRESHOLD

@@ -32,19 +32,26 @@ fi
 # Stage the new profile on explicit Beta only. Public Latest retains its
 # established launcher until the same qualified SHA is manually promoted.
 coded_mac_native_beta=0
+coded_mac_native_request=0
+coded_mac_backend_value=0
 case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in 1|yes|true|beta) coded_mac_native_beta=1 ;; esac
 for coded_mac_arg in "$@"; do
+  if [[ "$coded_mac_backend_value" == 1 ]]; then
+    [[ "$coded_mac_arg" != mac ]] || coded_mac_native_request=1
+    coded_mac_backend_value=0
+  fi
   case "$coded_mac_arg" in -beta|--beta) coded_mac_native_beta=1 ;; -latest|--latest) coded_mac_native_beta=0 ;; esac
+  case "$coded_mac_arg" in --backend=mac) coded_mac_native_request=1 ;; --backend) coded_mac_backend_value=1 ;; esac
 done
 # Apple Silicon Beta bootstraps before any host Python lookup.
-if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 && "$coded_mac_native_beta" == 1 ]]; then
+if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 && ( "$coded_mac_native_beta" == 1 || "$coded_mac_native_request" == 1 ) ]]; then
   if [[ "${CODED_ALLOW_FEATURE_VALIDATION:-0}" == 1 && -n "${CODED_MAC_BOOTSTRAP_LOCAL:-}" ]]; then
     [[ "$CODED_MAC_BOOTSTRAP_LOCAL" = /* && -f "$CODED_MAC_BOOTSTRAP_LOCAL" ]] || exit 64
     echo 'MACOS_BOOTSTRAP_QUALIFICATION_OVERRIDE=1'
     exec /bin/bash "$CODED_MAC_BOOTSTRAP_LOCAL" "$@"
   fi
-  mac_bootstrap_commit=28df0d7f9afd7f7e617ff09db696793f83f09dbe
-  mac_bootstrap_sha=efc7a6bdda403a6e31823bd40360fdebe3e575dfa1f90d5d221453be5f20039d
+  mac_bootstrap_commit=19c7b528a93c9fe6e67e917d264b0e61e774c6d4
+  mac_bootstrap_sha=122cbf2338eb15afcf1bac574862fe34e1de98a800e3b963730f2ea0494a72ba
   mac_bootstrap_dir="$HOME/.coded-miner/bootstrap"
   umask 077
   mkdir -p "$mac_bootstrap_dir"

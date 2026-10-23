@@ -1,296 +1,115 @@
-# CODED MINER 1.0 — because $0.01 IS CODED
+# CODED MINER — $0.01 IS CODED
 
-The official Qubic Miner for the CODED mining pool.
+The public packages and launchers for the CODED Qubic miner. Miner source is private; release assets are distributed only by this repository.
 
-## Unified Beta — Hive, Linux and Apple Silicon
+## Start Mining
 
-The combined Beta is published from Anthill
-`36247067379f25f28ef71305c854010b1cf966f3`.
-[Qualified Linux/Hive and Mac packages](https://github.com/CodedOnQubic/coded-miner-release/releases/tag/v1.0-ant-v3-unified-beta-36247067379f25f28ef71305c854010b1cf966f3-20261016T154443Z)
-share that source identity. RTX 3070/5070 each passed all five Linux package
-modes; M2 Pro/M3 Pro each passed NEON, Metal and Hybrid with real jobs and
-network submission disabled during qualification.
+Open [Start Mining](https://beta.codedonqubic.com/pool/onboarding), choose your operating system, enter your **public Qubic wallet identity** and give the machine a worker name. Never enter a wallet seed or private key.
 
-Public Latest and its existing launchers are unchanged. Windows CUDA/Hybrid
-qualification is deferred; do not install Windows over a Hive disk for testing.
+The page creates a downloadable launcher and the matching command to copy into your terminal. Both use the same backend, thread count and release channel. The foreground launcher owns the miner and its existing autoupdater.
 
-| Explicit Beta mode | Linux x86-64 | Apple Silicon Mac |
-| --- | --- | --- |
-| no GPU flag | CPU: AVX512 / AVX2 | CPU: NEON |
-| `-gpu` | CPU + CUDA Hybrid | NEON + Metal Hybrid |
-| `-gpu_only` | CUDA only | Metal only |
+Downloads are enabled separately for each operating system after qualification. If a channel is unavailable for your OS, wait for its qualified package. Do not substitute an older channel or a package from another platform.
 
-CUDA currently targets qualified RTX 3070 (SM86) and RTX 5070 (SM120).
-Explicit GPU requests fail closed if the required qualified binary/device is
-missing; they do not silently select CPU. Linux Hybrid uses the reviewed fixed
-24 CPU + 32 CUDA worker geometry, not automatic performance tuning. CPU-only
-accepts `-avx2`, `-avx512` and a thread shorthand such as `-8`.
+## Choose a backend
 
-Example Linux or Mac GPU-only Beta (replace the wallet and worker):
+| Selection | Mode |
+| --- | --- |
+| Auto | CPU only: AVX512 first, then AVX2; automatic threads |
+| AVX2 | CPU only, explicit AVX2 |
+| AVX512 | CPU only, explicit AVX512 |
+| CUDA | GPU only, explicit NVIDIA CUDA |
+| AVX2 + CUDA | Hybrid CPU + GPU |
+| AVX512 + CUDA | Hybrid CPU + GPU |
+| Mac | Automatic local choice of the packaged Apple CPU/GPU runtime |
+
+Auto is exclusive and never enables CUDA on an x86 machine. AVX2 and AVX512 are mutually exclusive. Select CUDA alongside one CPU backend for Hybrid. Threads default to Auto; a manual Hybrid thread count means **CPU threads**, with GPU workers managed separately. GPU-only has no CPU thread control.
+
+Explicit unsupported backends fail with an error rather than silently changing the selected mode. The retired `-gpu` and `-gpu_only` arguments are not part of this onboarding contract.
+
+## Linux
+
+Replace both placeholders. Run in a terminal as your ordinary user:
 
 ```bash
-WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- --beta -gpu_only
+WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- --beta
 ```
 
-Remove `-gpu_only` for CPU-only, or replace it with `-gpu` for Hybrid.
-Mac Beta packages include Python and a precompiled Metal library: no Homebrew,
-Xcode, Metal compiler or host Python is required. M2 Pro and M3 Pro are the
-tested hardware; other Apple Silicon generations are not asserted qualified
-solely from architecture compatibility.
+Add one of these configurations after `--beta`:
 
-Hive Extra Config:
+| Arguments | Configuration |
+| --- | --- |
+| none | Auto CPU and threads |
+| `-avx2 --threads 8` | AVX2 with eight CPU threads |
+| `-avx512 --threads 16` | AVX512 with sixteen CPU threads |
+| `-cuda` | CUDA only |
+| `-avx2 -cuda --threads 4` | AVX2 + CUDA with four CPU threads |
+| `-avx512 -cuda --threads 4` | AVX512 + CUDA with four CPU threads |
+
+CUDA requires a compatible NVIDIA driver. The package carries its CUDA runtime; no CUDA compiler or toolkit is needed on a mining client. Hardware qualification is limited to the devices stated in the release evidence, currently RTX 3070 / SM86 and RTX 5070 / SM120 for the release matrix.
+
+## Apple Silicon Mac
+
+Open Terminal and run:
+
+```bash
+WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- --beta --backend=mac
+```
+
+Mac exposes one choice: **Mac**. It selects a correctness-checked local CPU/GPU configuration with a bounded startup probe and safe defaults. Add `--threads 8` for a manual thread count.
+
+The ARM package includes Python and its precompiled Metal library. A mining client needs no Homebrew, Xcode, host Python or extra compiler. Apple Silicon M1–M5 compatibility is the packaging target; this is not a claim that every chip generation has been physically qualified. Read the exact release evidence for tested hardware. macOS 12 or newer is required by the current package.
+
+## Windows
+
+The native Windows Beta is awaiting complete package, GPU and recovery qualification. Its successful compilation and CLI checks do not certify mining parity. Start Mining keeps the new Windows Beta download and command disabled until those gates pass.
+
+When available, use the Windows launcher or PowerShell command generated by Start Mining. It preserves the same Auto / explicit CPU / CUDA / Hybrid selections. Mining clients will not need MSVC or NVCC.
+
+## HiveOS Flight Sheet
+
+In HiveOS, choose **Flight Sheet → Custom Miner → Expert Section**. Copy the installation URL for the selected available channel from Start Mining; Beta requires its Beta archive, not the Latest archive.
+
+| Field | Value |
+| --- | --- |
+| Miner name | `coded-miner` |
+| Installation URL | Copy from Start Mining for the selected channel |
+| Hash algorithm | `----` |
+| Wallet and worker template | `%WAL%-%WORKER_NAME%` |
+| Pool URL | `pool.codedonqubic.com:7777` |
+| Pass | Leave empty |
+
+Examples of **Beta Extra Config**:
 
 ```json
 {"beta":"yes"}
 ```
 
-CPU-only is the default. GPU-only:
-
 ```json
-{"beta":"yes","gpu":"yes","cpu":"no"}
-```
-
-CPU + GPU Hybrid:
-
-```json
-{"beta":"yes","gpu":"yes"}
-```
-
-Do not switch an old GPU-only cursor into Hybrid by copying or deleting state.
-The existing native drain/checkpoint and guarded state conversion must finish.
-Every Beta client follows the same completed, qualified Beta release through
-its existing autoupdater. A new Beta source/release updates CPU clients too,
-even when that release did not change their CPU scorer. CPU/GPU mode remains
-explicit; updating never turns a CPU-only configuration into Hybrid. Historical
-per-rig canary pins must be deliberately retired before those rigs follow the
-global channel. Failed/incomplete builds are not channel authority. There is
-one successful Beta per exact Anthill SHA; timestamps do not authorize rebuilding
-an already successful source identity. Latest promotion is separate and manual.
-
-The console separates FOUND, POOL acceptance and independently proven NET
-acceptance. Analytics2 rates come from the actual native process, not a sidecar
-estimate. Closing the miner must stop its owned telemetry process as well.
-
----
-
-## Public Latest — legacy channel, unchanged
-
-* Existing Linux / Windows / Mac ARM launchers
-* HiveOS supported
-* Performance still evolving
-* CPU mining only
-* Automatic backend detection: AVX512 → AVX2 → Scalar
-* The new CUDA/Hybrid/native Mac profile above requires explicit `--beta`
-
----
-
-# 🚀 Quick Start
-
-Replace:
-
-```text
-YOUR_QUBIC_WALLET
-YOUR_WORKER_NAME
-```
-
-Use a public worker name for your machine, for example:
-
-```text
-Rig1
-OfficePC
-MacMini
-WinAVX2
-```
-
----
-
-# 🖥️ Windows
-
-* Press **Win + R**
-* Type `cmd.exe`
-* Paste the one-liner
-* Set your own Qubic Wallet and worker name
-
-## Auto Optimization Mode
-
-Automatic backend and thread optimization:
-
-
-```powershell
-powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME"
-```
-
-## Manual Mode
-
-Optional backend and thread control.
-
-Example: force AVX2 and use 10 threads.
-
-```powershell
-powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet YOUR_QUBIC_WALLET -Worker YOUR_WORKER_NAME -avx2 -10"
-```
-
-## Optional Parameters
-
-```text
--avx2, -avx512, -1, -2, -3, -4, -10, -32, etc.
-```
-
-### Thread Control
-
-| Value | Behavior                             |
-| ----- | ------------------------------------ |
-| empty | Auto detect: all CPU threads minus 1 |
-| `-4`  | Use 4 threads                        |
-| `-10` | Use 10 threads                       |
-| `-32` | Use 32 threads                       |
-
-### Backend Control
-
-| Value     | Behavior                            |
-| --------- | ----------------------------------- |
-| empty     | Auto detect: AVX512 → AVX2 → Scalar |
-| `-avx512` | Force AVX512 if supported           |
-| `-avx2`   | Force AVX2 if supported             |
-
----
-
-# 🍎 Mac ARM
-
-For Apple Silicon: M1 / M2 / M3 / M4.
-
-* Open the Terminal app
-* Paste the one-liner
-* Set your own Qubic Wallet and worker name
-
-## Auto Optimization Mode
-
-```bash
-WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
-```
-
----
-
-# 🐧 Linux
-
-* Open a terminal
-* Paste the one-liner
-* Set your own Qubic Wallet and worker name
-
-## Auto Optimization Mode
-
-Automatic backend and thread optimization:
-
-```bash
-WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)"
-```
-
-## Manual Mode
-
-Optional backend and thread control.
-
-Example: force AVX2 and use 10 threads.
-
-```bash
-QUBIC_WALLET='YOUR_QUBIC_WALLET' QUBIC_WORKER='YOUR_WORKER_NAME' bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- -avx2 -10
-```
-
-## Optional Parameters
-
-```text
--avx2, -avx512, -1, -2, -3, -4, -10, -32, etc.
-```
-
-### Thread Control
-
-| Value | Behavior                             |
-| ----- | ------------------------------------ |
-| empty | Auto detect: all CPU threads minus 1 |
-| `-4`  | Use 4 threads                        |
-| `-10` | Use 10 threads                       |
-| `-32` | Use 32 threads                       |
-
-### Backend Control
-
-| Value     | Behavior                            |
-| --------- | ----------------------------------- |
-| empty     | Auto detect: AVX512 → AVX2 → Scalar |
-| `-avx512` | Force AVX512 if supported           |
-| `-avx2`   | Force AVX2 if supported             |
-
----
-
-# 🐝 HiveOS Flight Sheet Setup
-
-HiveOS → **Flight Sheet** → **Custom Miner** → **Expert Section**
-
-Use the following values:
-
-| Field                      | Value                                                                                                    |
-| -------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Miner name                 | `coded-miner`                                                                                            |
-| Installation URL           | `https://github.com/CodedOnQubic/coded-miner-release/releases/latest/download/coded-miner-latest.tar.gz` |
-| Hash algorithm             | `----`                                                                                                   |
-| Wallet and worker template | `%WAL%-%WORKER_NAME%`                                                                                    |
-| Pool URL                   | `pool.codedonqubic.com:7777`                                                                             |
-| Pass                       | leave empty                                                                                              |
-| Extra config arguments     | `{"amountOfThreads":16,"cpu":"avx2"}`                                                                    |
-
-## Thread Control in HiveOS
-
-```json
-{"amountOfThreads":32}
-```
-
-| Value | Behavior                             |
-| ----- | ------------------------------------ |
-| empty | Auto detect: all CPU threads minus 1 |
-| `4`   | Use 4 threads                        |
-| `16`  | Use 16 threads                       |
-| `32`  | Use 32 threads                       |
-
-## Backend Control in HiveOS
-
-```json
-{"cpu":"avx2"}
+{"beta":"yes","backend":"avx2","amountOfThreads":8}
 ```
 
 ```json
-{"cpu":"avx512"}
+{"beta":"yes","backend":"cuda"}
 ```
 
-| Value    | Behavior                            |
-| -------- | ----------------------------------- |
-| empty    | Auto detect: AVX512 → AVX2 → Scalar |
-| `avx512` | Force AVX512 if supported           |
-| `avx2`   | Force AVX2 if supported             |
-
----
-
-# 📡 Dashboard
-
-Workers appear automatically:
-
-* Worker name
-* Wallet
-* Status
-* Hashrate
-
-👉 https://codedonqubic.com/pool
-
----
-
-# Feedback
-
-This is an early beta release.
-
-Report issues, bugs, or performance results.
-
-
-```powershell
-powershell -NoP -EP Bypass -C "[Net.ServicePointManager]::SecurityProtocol=3072;iwr -UseB https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.ps1 -OutFile $env:TEMP\r.ps1;& $env:TEMP\r.ps1 -Wallet EUELEOZEENRCEDYVEAZEBYVHQFABSUFFWTUWTFNSFALSTCNJLCDSEROGOSYI -Worker RigPortable_Win8"
+```json
+{"beta":"yes","backend":"hybrid-avx512","amountOfThreads":4}
 ```
 
-```powershell
-type "%LOCALAPPDATA%\CODED\miner\coded-miner.log" | findstr /I "ERROR SUBMIT_SPOOL spool initialize connect subscribe"
-```
+For AVX2 Hybrid use `hybrid-avx2`. In Hybrid, `amountOfThreads` is the CPU count; it is not the combined CPU/GPU worker count. Omit it for Auto.
+
+## Updates and existing workers
+
+Beta and Latest are separate channels. Beta is tested first. Promotion to Latest preserves the exact qualified source and packages; it does not rebuild them. A disabled Beta may follow Latest only through the existing promotion contract. This README does not promote a release.
+
+Keep the same wallet, worker identity and persistent state. An update must preserve the existing native geometry. A stopped-work receipt does not authorize a Solo/Hybrid conversion, state reset or deletion of a search cursor. If a mode change is held for migration, keep the existing configuration and report the error. Never delete state to make a launch succeed.
+
+Hive remains the live mining host during Windows VM preparation. Windows GPU tests require an explicitly controlled test window and restoration of the existing Hive owner.
+
+## Logs and support
+
+The public miner console uses the **$0.01 IS CODED** branding. FOUND, pool responses and independently verified network acceptance are different observations; a sent packet is not proof of network acceptance.
+
+Hive public output is available in `/var/log/miner/coded-miner/coded-miner.log`. Mac public output stays in the foreground Terminal. Include OS, selected channel, full source commit, backend, thread count and the relevant error lines when reporting a problem. Do not include private keys, credentials or full environment dumps.
+
+The public dashboard is linked from Start Mining. A worker is ready only when the correct native process receives a current job and its real scoring counters advance.
