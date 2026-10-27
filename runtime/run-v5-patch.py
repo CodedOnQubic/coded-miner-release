@@ -21,16 +21,15 @@ def linux_v1306(text: str) -> str:
                             f'-{cpu}) CODED_PUBLIC_CPU_REQUEST={cpu}; BACKEND={cpu} ;;', 'CPU selector')
     text = replace_once(text, 'while [ $# -gt 0 ]; do\n  case "$1" in\n    -avx2)',
         '''# CODED_LINUX_V1306_PUBLIC_ARGUMENTS
-CODED_PUBLIC_GPU_REQUEST=0
-CODED_PUBLIC_GPU_ONLY_REQUEST=0
+CODED_PUBLIC_CUDA_REQUEST=0
 CODED_PUBLIC_CPU_REQUEST=auto
 CODED_PUBLIC_THREADS_EXPLICIT=0
 export PYTHONDONTWRITEBYTECODE=1
 [ -z "${CODED_THREADS:-}" ] && [ "${THREADS:-0}" = 0 ] || CODED_PUBLIC_THREADS_EXPLICIT=1
 while [ $# -gt 0 ]; do
   case "$1" in
-    -gpu|--gpu) CODED_PUBLIC_GPU_REQUEST=1 ;;
-    -gpu_only|--gpu-only) CODED_PUBLIC_GPU_ONLY_REQUEST=1 ;;
+    -cuda|--cuda) CODED_PUBLIC_CUDA_REQUEST=1 ;;
+    -gpu|--gpu|-gpu_only|--gpu-only) echo 'ERROR: use -cuda, optionally with -avx2 or -avx512' >&2; exit 64 ;;
     --threads|-t)
       shift; [ $# -gt 0 ] || exit 64
       THREADS="$1"; CODED_PUBLIC_THREADS_EXPLICIT=1 ;;
@@ -38,12 +37,10 @@ while [ $# -gt 0 ]; do
     text = replace_once(text, '\nWALLET="${WALLET:-${QUBIC_WALLET:-${CODED_WALLET:-}}}"', '''
 # CPU selection and GPU enablement are independent, order-independent inputs.
 case "$BACKEND" in avx2|avx512) CODED_PUBLIC_CPU_REQUEST="$BACKEND" ;; esac
-if [ "$CODED_PUBLIC_GPU_ONLY_REQUEST" = 1 ]; then
-  [ "$CODED_PUBLIC_GPU_REQUEST" = 0 ] && [ "$CODED_PUBLIC_CPU_REQUEST" = auto ] || {
-    echo 'ERROR: conflicting GPU-only and CPU/Hybrid arguments' >&2; exit 64;
-  }
-  BACKEND=cuda
-elif [ "$CODED_PUBLIC_GPU_REQUEST" = 1 ]; then BACKEND=hybrid
+if [ "$CODED_PUBLIC_CUDA_REQUEST" = 1 ]; then
+  if [ "$CODED_PUBLIC_CPU_REQUEST" = auto ]; then BACKEND=cuda
+  else BACKEND=hybrid
+  fi
 fi
 export CODED_PUBLIC_CPU_REQUEST CODED_PUBLIC_THREADS_EXPLICIT
 WALLET="${WALLET:-${QUBIC_WALLET:-${CODED_WALLET:-}}}"''', 'Linux resolved request')
@@ -84,7 +81,41 @@ print(version)
 PYV1306VERSION
 )" || exit 66
   export CODED_RELEASE_VERSION CODED_MINER_VERSION="$CODED_RELEASE_VERSION"
-  export CODED_BPP9000_WORKER_INDEX_BASE=0 CODED_CUDA_WORKERS=8 CODED_CUDA_V1306_THREADS=64
+  export CODED_POOL_API_URL="${CODED_POOL_API_URL:-${POOL_API_URL:-https://api.codedonqubic.com}}"
+  export CODED_BPP9000_WORKER_INDEX_BASE=0
+  # CODED_LINUX_V1306_CUDA_PROFILE: use the integrity-checked package contract,
+  # never inherit the predecessor's kernel geometry across an update.
+  cuda_profile_env="$(python3 -B - "$INSTALL_DIR/release_manifest.json" <<'PYCUDAPROFILE'
+import json,sys
+manifest=json.load(open(sys.argv[1]))
+profile=manifest.get('cuda_optimized_profile')
+workers=manifest.get('cuda_default_workers',8)
+expected_workers=(512 if manifest.get('source_commit')=='7da5dbcbada2ab4d49bee922856c01db60215a4f' else 8)
+assert type(workers) is int and workers==expected_workers, 'unqualified_cuda_worker_geometry'
+assert expected_workers!=512 or (manifest.get('population')==32 and profile is not None), 'cuda512_requires_qualified_p32_profile'
+if profile is None:
+    threads=64;wait=60
+else:
+    assert isinstance(profile,dict) and type(profile.get('enabled')) is bool, 'invalid_cuda_profile'
+    enabled=profile['enabled'];threads=32 if enabled else 64;wait=120 if enabled else 60
+    expected={'schema':'coded.cuda.p32-build-profile.v1','enabled':enabled,
+        'threads_per_block':threads,'large_batch_collection_cap_ms':wait,
+        'register_state':enabled,'fixed_point':enabled,'exact_cycle':enabled,
+        'packed_lut':enabled,'undo_mutations':enabled,'cycle_index':enabled,
+        'cpu_geometry_changed':False,'cuda_geometry_changed':False,'hardware_qualification_implied':False}
+    assert profile==expected and all(type(profile[k]) is bool for k,v in expected.items() if type(v) is bool), 'invalid_cuda_profile'
+    assert not enabled or manifest.get('population')==32, 'optimized_cuda_requires_p32'
+    assert manifest.get('hybrid_profile',{}).get('partial_flush_ms')==wait, 'cuda_collection_contract_mismatch'
+assert manifest.get('cuda_default_threads_per_block',64)==threads, 'cuda_kernel_contract_mismatch'
+print('export CODED_CUDA_WORKERS='+str(workers))
+print('export CODED_CUDA_V1306_THREADS='+str(threads))
+# The compiled profile applies its larger cap only to large worker batches.
+# Do not turn that cap into an unconditional per-batch wait override.
+print('unset CODED_CUDA_BATCH_WAIT_MS')
+PYCUDAPROFILE
+)" || exit 66
+  eval "$cuda_profile_env"
+  # CODED_LINUX_V1306_CUDA_PROFILE_END
   export CODED_ROUTER_PROFILE=ant_v3_live CODED_ARCHITECTURE=x86_64 CODED_CPU_ARCH=x86_64
   export CODED_BUILD_TARGET="linux-amd64-$SELECTED_BACKEND"
   unset CODED_THRESHOLD THRESHOLD
@@ -246,7 +277,7 @@ PYCOMMIT
     effective_override = r'''# M1091V64B_PLATFORM_EXACT_BETA_AUTOUPDATE
 coded_m1091v51p_effective_release_line() {
   local pool status_json wants_beta
-  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
+  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-https://api.codedonqubic.com}}"
   wants_beta=0
   case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in
     1|yes|YES|true|TRUE|beta|BETA) wants_beta=1 ;;
@@ -326,7 +357,7 @@ coded_m1091v50h_try_beta() {
   coded_m1091v50h_beta_requested "$@" || return 1
 
   local pool channel_url status_json beta_line beta_version beta_commit beta_asset_name beta_url
-  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-http://178.104.150.57:4000}}"
+  pool="${CODED_POOL_API_URL:-${POOL_API_URL:-https://api.codedonqubic.com}}"
   channel_url="${CODED_RELEASE_CHANNEL_STATUS_URL:-${pool%/}/admin/release/channel-status}"
   status_json="$(curl -fsSL --connect-timeout 5 --max-time 15 "${channel_url}?cb=$(date +%s)" 2>/dev/null || true)"
   [ -n "$status_json" ] || return 1

@@ -8,7 +8,7 @@ unset PYTHONHOME PYTHONUSERBASE PYTHONPATH
 [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 ]] || { echo 'ERROR: Apple Silicon macOS required' >&2; exit 65; }
 channel=latest
 case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in 1|yes|true|beta) channel=beta ;; esac
-backend=neon
+backend=mac
 selected=""
 threads=0
 wallet="${WALLET:-${QUBIC_WALLET:-}}"
@@ -22,23 +22,27 @@ while (($#)); do
   case "$1" in
     -beta|--beta) channel=beta ;;
     -latest|--latest) channel=latest ;;
-    -gpu|--gpu|-hybrid) choose_backend hybrid ;;
-    -gpu_only|--gpu-only|-metal) choose_backend metal ;;
-    -neon|-auto) choose_backend neon ;;
-    --backend=*) value="${1#*=}"; [[ "$value" != auto ]] || value=neon; choose_backend "$value" ;;
-    --backend) shift; (($#)) || exit 64; value="$1"; [[ "$value" != auto ]] || value=neon; choose_backend "$value" ;;
+    -gpu|--gpu|-gpu_only|--gpu-only)
+      echo 'ERROR: retired GPU arguments; Mac selects CPU/GPU automatically' >&2; exit 64 ;;
+    -auto) choose_backend mac ;;
+    --backend=*) value="${1#*=}"; [[ "$value" != auto ]] || value=mac; choose_backend "$value" ;;
+    --backend) shift; (($#)) || exit 64; value="$1"; [[ "$value" != auto ]] || value=mac; choose_backend "$value" ;;
     --wallet|--worker|--pool|--threads)
       option="$1"; shift; (($#)) || exit 64
       case "$option" in --wallet) wallet="$1";; --worker) worker="$1";; --pool) pool="$1";; --threads) threads="$1";; esac ;;
     -[0-9]*) threads="${1#-}" ;;
     --help|-h)
-      echo 'CODED Mac: WALLET=... WORKER=... bash run.sh --beta [-gpu|-gpu_only] [-8]'
-      echo 'Default CPU/NEON; -gpu CPU+Metal; -gpu_only Metal-only. Apple Silicon, macOS 12+.'; exit 0 ;;
+      echo 'CODED Mac: WALLET=... WORKER=... bash run.sh --beta [--threads N]'
+      echo 'Mac selects the packaged CPU/GPU runtime locally. Threads default to auto. Apple Silicon, macOS 12+.'; exit 0 ;;
     *) echo "ERROR: unsupported Mac argument: $1" >&2; exit 64 ;;
   esac
   shift
 done
-[[ "$backend" =~ ^(neon|metal|hybrid)$ && "$threads" =~ ^[0-9]+$ && "$threads" -le 1024 ]] || exit 64
+# A public start exposes only Mac. An already running supervisor may retain its
+# native lane across an update; the new package validates the stop/hash receipt
+# before it can execute. Environment presence alone never authorizes execution.
+[[ "$backend" == mac || ( -n "${CODED_MACOS_SAME_LAYOUT_RESUME:-}" && "$backend" =~ ^(neon|metal|hybrid)$ ) ]] || exit 64
+[[ "$threads" =~ ^[0-9]+$ && "$threads" -le 1024 ]] || exit 64
 [[ "$wallet" =~ ^[A-Z]{60}$ && "$worker" =~ ^[A-Za-z0-9_.-]{1,80}$ ]] || { echo 'ERROR: set a valid WALLET and WORKER' >&2; exit 64; }
 channel_url="${CODED_MAC_CHANNEL_URL:-https://api.codedonqubic.com/admin/release/channel-status}"
 release_api="${CODED_MAC_RELEASE_API:-https://api.github.com/repos/CodedOnQubic/coded-miner-release/releases/tags}"
@@ -56,6 +60,19 @@ mkdir -p "$cache_parent"
 stage="$(mktemp -d "$cache_parent/.stage.XXXXXX")"
 echo "Mac package staging: $stage"
 curl -fsSL --connect-timeout 5 --max-time 20 "$channel_url" -o "$stage/channel.json"
+requested_channel="$channel"
+if [[ "$channel" == beta ]]; then
+  disabled="$(plutil -extract beta_disabled.disabled raw -o - "$stage/channel.json" 2>/dev/null || true)"
+  disabled_commit="$(plutil -extract beta_disabled.commit raw -o - "$stage/channel.json" 2>/dev/null || true)"
+  if [[ "$disabled" == true ]]; then
+    latest_commit="$(plutil -extract public_latest.commit raw -o - "$stage/channel.json" 2>/dev/null || true)"
+    if [[ "$disabled_commit" =~ ^[0-9a-f]{40}$ && "$latest_commit" == "$disabled_commit" ]]; then
+      channel=latest
+    else
+      echo 'ERROR: disabled Beta has no identical promoted Latest; refusing fallback' >&2; exit 69
+    fi
+  fi
+fi
 if [[ "$channel" == beta ]]; then prefix=beta; alias=coded-miner-macos-arm64-beta-latest.tar.gz
 else prefix=public_latest; alias=coded-miner-macos-arm64-latest.tar.gz; fi
 version="$(plutil -extract "$prefix.version" raw -o - "$stage/channel.json")"
@@ -124,6 +141,6 @@ if [[ "${CODED_MAC_STAGE_ONLY:-0}" == 1 ]]; then
 fi
 echo "CODED Mac source=$commit backend=$backend channel=$channel"
 export CODED_MACOS_ONELINER_SOURCE="$commit"
-export CODED_MACOS_ONELINER_CHANNEL="$channel"
+export CODED_MACOS_ONELINER_CHANNEL="$requested_channel"
 export CODED_MACOS_BOOTSTRAP_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
 exec /bin/bash "$cache/coded-miner/coded-miner-macos" --pool "$pool" --wallet "$wallet" --worker "$worker" --backend "$backend" --threads "$threads"
