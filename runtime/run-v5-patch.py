@@ -90,7 +90,9 @@ import json,sys
 manifest=json.load(open(sys.argv[1]))
 profile=manifest.get('cuda_optimized_profile')
 workers=manifest.get('cuda_default_workers',8)
-assert type(workers) is int and workers==8, 'unqualified_cuda_worker_geometry'
+expected_workers=(512 if manifest.get('source_commit')=='7da5dbcbada2ab4d49bee922856c01db60215a4f' else 8)
+assert type(workers) is int and workers==expected_workers, 'unqualified_cuda_worker_geometry'
+assert expected_workers!=512 or (manifest.get('population')==32 and profile is not None), 'cuda512_requires_qualified_p32_profile'
 if profile is None:
     threads=64;wait=60
 else:
@@ -108,7 +110,7 @@ assert manifest.get('cuda_default_threads_per_block',64)==threads, 'cuda_kernel_
 print('export CODED_CUDA_WORKERS='+str(workers))
 print('export CODED_CUDA_V1306_THREADS='+str(threads))
 # The compiled profile applies its larger cap only to large worker batches.
-# Do not turn that cap into an override for the eight-worker CUDA solo lane.
+# Do not turn that cap into an unconditional per-batch wait override.
 print('unset CODED_CUDA_BATCH_WAIT_MS')
 PYCUDAPROFILE
 )" || exit 66

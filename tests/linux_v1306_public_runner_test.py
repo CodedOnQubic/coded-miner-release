@@ -106,5 +106,26 @@ class PublicLinux(unittest.TestCase):
             self.assertEqual(result.returncode,0,result.stderr)
             self.assertIn('LEGACY_PATH',result.stdout)
 
+    def test_exact_qualified_cuda512_and_historical_worker_denial(self):
+        import json
+        body=self.text.split("<<'PYCUDAPROFILE'\n",1)[1].split('\nPYCUDAPROFILE',1)[0]
+        profile=dict(schema='coded.cuda.p32-build-profile.v1',enabled=True,
+            threads_per_block=32,large_batch_collection_cap_ms=120,register_state=True,
+            fixed_point=True,exact_cycle=True,packed_lut=True,undo_mutations=True,
+            cycle_index=True,cpu_geometry_changed=False,cuda_geometry_changed=False,
+            hardware_qualification_implied=False)
+        current='7da5dbcbada2ab4d49bee922856c01db60215a4f'
+        for source,workers,passed in ((current,512,True),(current,8,False),('0'*40,8,True),
+                                    ('0'*40,512,False),(current,True,False),(current,'512',False)):
+            manifest=dict(source_commit=source,population=32,cuda_default_workers=workers,
+                cuda_optimized_profile=profile,cuda_default_threads_per_block=32,
+                hybrid_profile=dict(partial_flush_ms=120))
+            with tempfile.TemporaryDirectory() as temporary:
+                p=Path(temporary)/'manifest.json';p.write_text(json.dumps(manifest))
+                result=subprocess.run(['python3','-B','-c',body,str(p)],text=True,capture_output=True)
+            with self.subTest(source=source,workers=workers):
+                self.assertEqual(result.returncode==0,passed,result.stderr)
+                if passed:self.assertIn('export CODED_CUDA_WORKERS='+str(workers),result.stdout)
+
 
 if __name__ == '__main__': unittest.main()
