@@ -127,5 +127,30 @@ class PublicLinux(unittest.TestCase):
                 self.assertEqual(result.returncode==0,passed,result.stderr)
                 if passed:self.assertIn('export CODED_CUDA_WORKERS='+str(workers),result.stdout)
 
+    def test_exact_published_core237_profile_and_metadata_denial(self):
+        import json
+        body=self.text.split("<<'PYCUDAPROFILE'\n",1)[1].split('\nPYCUDAPROFILE',1)[0]
+        manifest=dict(source_commit='94fced124b490eab6d6da30029f91a1fe96a21a3',
+            core_commit='4fc13712e26567ad24bf6ec62ec41aab9e02cec7',
+            task_sha256='06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12',
+            population=32,ann_bytes=1088,advance_threshold=2920,cuda_architectures=[86,120],
+            cuda_default_workers=512,cuda_default_threads_per_block=32,
+            hybrid_profile=dict(partial_flush_ms=120),
+            cuda_optimized_profile=dict(schema='coded.cuda.p32-build-profile.v1',enabled=True,
+                threads_per_block=32,large_batch_collection_cap_ms=120,register_state=True,
+                fixed_point=True,exact_cycle=True,packed_lut=True,undo_mutations=True,
+                cycle_index=True,cpu_geometry_changed=False,cuda_geometry_changed=False,
+                hardware_qualification_implied=False))
+        def run(value):
+            with tempfile.TemporaryDirectory() as temporary:
+                p=Path(temporary)/'manifest.json';p.write_text(json.dumps(value))
+                return subprocess.run(['python3','-B','-c',body,str(p)],text=True,capture_output=True)
+        good=run(manifest);self.assertEqual(good.returncode,0,good.stderr)
+        self.assertIn('export CODED_CUDA_WORKERS=512',good.stdout)
+        for key,bad in [('source_commit','0'*40),('core_commit','0'*40),('task_sha256','0'*64),
+            ('population',64),('ann_bytes',2176),('advance_threshold',2190),
+            ('cuda_architectures',[86]),('cuda_architectures',[86.0,120.0]),('cuda_default_workers',8)]:
+            with self.subTest(key=key,bad=bad):self.assertNotEqual(run(dict(manifest,**{key:bad})).returncode,0)
+
 
 if __name__ == '__main__': unittest.main()

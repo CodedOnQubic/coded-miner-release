@@ -90,7 +90,15 @@ import json,sys
 manifest=json.load(open(sys.argv[1]))
 profile=manifest.get('cuda_optimized_profile')
 workers=manifest.get('cuda_default_workers',8)
-expected_workers=(512 if manifest.get('source_commit')=='7da5dbcbada2ab4d49bee922856c01db60215a4f' else 8)
+source=manifest.get('source_commit')
+expected_workers=(512 if source in ('7da5dbcbada2ab4d49bee922856c01db60215a4f',
+    '94fced124b490eab6d6da30029f91a1fe96a21a3') else 8)
+if source=='94fced124b490eab6d6da30029f91a1fe96a21a3':
+    assert manifest.get('core_commit')=='4fc13712e26567ad24bf6ec62ec41aab9e02cec7', 'qualified_core237_identity_required'
+    assert manifest.get('task_sha256')=='06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12', 'qualified_core237_task_required'
+    for key,value in (('population',32),('ann_bytes',1088),('advance_threshold',2920)):
+        assert type(manifest.get(key)) is int and manifest[key]==value, 'qualified_core237_geometry_required'
+    assert manifest.get('cuda_architectures')==[86,120] and all(type(v) is int for v in manifest['cuda_architectures']), 'qualified_core237_cuda_architectures_required'
 assert type(workers) is int and workers==expected_workers, 'unqualified_cuda_worker_geometry'
 assert expected_workers!=512 or (manifest.get('population')==32 and profile is not None), 'cuda512_requires_qualified_p32_profile'
 if profile is None:
