@@ -58,7 +58,6 @@ umask 077
 cache_parent="${CODED_MAC_PACKAGE_CACHE:-$HOME/.coded-miner/packages/macos}"
 mkdir -p "$cache_parent"
 stage="$(mktemp -d "$cache_parent/.stage.XXXXXX")"
-echo "Mac package staging: $stage"
 curl -fsSL --connect-timeout 5 --max-time 20 "$channel_url" -o "$stage/channel.json"
 requested_channel="$channel"
 if [[ "$channel" == beta ]]; then
@@ -100,7 +99,7 @@ cache="$cache_parent/$version"
 check_package() {
   local directory="$1"
   [[ -x "$directory/coded-miner/python/bin/python3" && -f "$directory/coded-miner/coded-package-check.py" ]] || return 1
-  "$directory/coded-miner/python/bin/python3" -I -B "$directory/coded-miner/coded-package-check.py" "$directory/coded-miner" "$commit" "$version"
+  "$directory/coded-miner/python/bin/python3" -I -B "$directory/coded-miner/coded-package-check.py" "$directory/coded-miner" "$commit" "$version" >/dev/null
 }
 if [[ ! -d "$cache" ]]; then
   curl -fsSL --connect-timeout 5 --max-time 30 "$release_api/$version" -o "$stage/release.json"
@@ -118,7 +117,7 @@ if [[ ! -d "$cache" ]]; then
   [[ "$expected" =~ ^sha256:[0-9a-f]{64}$ && "$artifact_url" == "$download_base/$version/$alias" ]] || {
     echo 'ERROR: exact versioned Mac asset/digest not found' >&2; exit 69;
   }
-  curl -fL --connect-timeout 5 --max-time 300 "$artifact_url" -o "$stage/package.tar.gz"
+  curl -fsSL --connect-timeout 5 --max-time 300 "$artifact_url" -o "$stage/package.tar.gz"
   actual="$(shasum -a 256 "$stage/package.tar.gz" | awk '{print $1}')"
   [[ "$actual" == "${expected#sha256:}" ]] || { echo 'ERROR: archive SHA256 mismatch' >&2; exit 69; }
   # The complete archive digest was verified before any extraction or execution.
@@ -139,7 +138,6 @@ if [[ "${CODED_MAC_STAGE_ONLY:-0}" == 1 ]]; then
   echo "MACOS_STAGE_READY source=$commit"
   exit 0
 fi
-echo "CODED Mac source=$commit backend=$backend channel=$channel"
 export CODED_MACOS_ONELINER_SOURCE="$commit"
 export CODED_MACOS_ONELINER_CHANNEL="$requested_channel"
 export CODED_MACOS_BOOTSTRAP_PATH="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)/$(basename "${BASH_SOURCE[0]}")"
