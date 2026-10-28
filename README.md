@@ -61,9 +61,9 @@ The ARM package includes Python and its precompiled Metal library. A mining clie
 
 ## Windows
 
-The native Windows Beta is awaiting complete package, GPU and recovery qualification. Its successful compilation and CLI checks do not certify mining parity. Start Mining keeps the new Windows Beta download and command disabled until those gates pass.
+The joined Windows Beta is published with AVX2, AVX512, CUDA solo, AVX2+CUDA and AVX512+CUDA. Native package and recovery qualification covers RTX 3070 (Ampere/SM86) and RTX 5070 (Blackwell/SM120). Start Mining enables an OS/channel only when the live channel advertises the matching reviewed onboarding contract. This does not claim that every community PC has been tested.
 
-When available, select **Windows**, enter your public wallet and a distinct worker name, and choose **Beta**. Leave backend and threads on **Auto** for the standard CPU setup, or select CUDA and an optional CPU backend explicitly. Download **CODED MINER.exe**, open it from Downloads and leave its mining window open. The launcher downloads the verified miner for the selected channel and manages approved updates. Mining clients will not need MSVC, NVCC or a separate Python installation.
+Select **Windows**, enter your public wallet and a distinct worker name, and choose **Beta**. Leave backend and threads on **Auto** for the standard CPU setup, or select CUDA and an optional CPU backend explicitly. Download **CODED MINER.exe**, open it from Downloads and leave its mining window open. The launcher downloads the verified miner for the selected channel and manages approved updates. Mining clients will not need MSVC, NVCC or a separate Python installation.
 
 Alternatively, paste the matching command from Start Mining into **Command Prompt (cmd.exe)**. The file and command carry the same settings. Use one launcher per worker; stop the first instance with **Ctrl+C** and wait for its clean shutdown before trying the other method. Keep the same wallet, worker and state on restart.
 
@@ -98,11 +98,11 @@ Examples of **Beta Extra Config**:
 {"beta":"yes","backend":"hybrid-avx512","amountOfThreads":4}
 ```
 
-For AVX2 Hybrid use `hybrid-avx2`. In Hybrid, `amountOfThreads` is the CPU count; it is not the combined CPU/GPU worker count. Omit it for Auto.
+For AVX2 Hybrid use `hybrid-avx2`. The qualified CUDA package owns the logical GPU worker count (currently 512); do not set CPU threads to 512 to request GPU workers. The legacy Hive spelling `{"beta":"yes","gpu":"yes","cpu":"no"}` also selects CUDA-only. `{"beta":"yes","gpu":"yes"}` selects automatic CPU+CUDA Hybrid. Do not mix conflicting `backend`, `cpu` and `gpu` selections. In Hybrid, `amountOfThreads` is the CPU count; it is not the combined CPU/GPU worker count. Omit it for Auto.
 
 ## Updates and existing workers
 
-Beta and Latest are separate channels. Beta is tested first. Promotion to Latest preserves the exact qualified source and packages; it does not rebuild them. A disabled Beta may follow Latest only through the existing promotion contract. This README does not promote a release.
+Beta and Latest are separate channels. Beta is tested first. Promotion to Latest preserves the qualified native binaries without recompiling them. The promoter may rewrite channel metadata and repack archives; the promoted archives need their own digest/launcher checks. A disabled Beta may follow Latest only through the existing promotion contract. This README does not promote a release.
 
 Keep the same wallet, worker identity and persistent state. An update must preserve the existing native geometry. A stopped-work receipt does not authorize a Solo/Hybrid conversion, state reset or deletion of a search cursor. If a mode change is held for migration, keep the existing configuration and report the error. Never delete state to make a launch succeed.
 
@@ -110,7 +110,7 @@ Hive remains the live mining host during Windows VM preparation. Windows GPU tes
 
 ## Logs and support
 
-The public miner console uses the **$0.01 IS CODED** branding. FOUND, pool responses and independently verified network acceptance are different observations; a sent packet is not proof of network acceptance.
+The public miner console uses the **$0.01 IS CODED** branding. FOUND, pool acceptance, network acceptance and independent confirmation are separate observations. In the current partner path, Network Accepted requires a request-bound MinerLab `scored` verdict with a valid onchain commit. Bob/Core replay is an additional independent counter. A sent packet is not network acceptance.
 
 Hive public output is available in `/var/log/miner/coded-miner/coded-miner.log`. Mac public output stays in the foreground Terminal. Windows public output stays in its mining window; per-run native and Analytics logs are stored under `%LOCALAPPDATA%\CODED\state\windows\<identity>\`. Include OS, selected channel, full source commit, backend, thread count and the relevant error lines when reporting a problem. Do not include private keys, credentials or full environment dumps.
 
