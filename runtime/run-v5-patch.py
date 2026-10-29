@@ -96,6 +96,7 @@ expected_workers=(512 if source in ('7da5dbcbada2ab4d49bee922856c01db60215a4f',
 mixed=isinstance(profile,dict) and profile.get('schema')=='coded.cuda.p32-build-profile.v2'
 if mixed:
     import re
+    assert type(manifest.get('core_profile')) is int and manifest['core_profile']==237, 'mixed_profile_core_profile_required'
     assert re.fullmatch('[0-9a-f]{40}',str(source)), 'mixed_profile_source_identity_required'
     assert manifest.get('algorithm_generation')=='70d6e78b1ee4dec7c793436d8f3b43ffe515a68c179a107a90db773c20c3b23f', 'mixed_profile_algorithm_required'
     binding=manifest.get('work_authority_build',{})

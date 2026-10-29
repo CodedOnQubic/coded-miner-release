@@ -104,7 +104,7 @@ class PublicLinux(unittest.TestCase):
             'requested_walks_per_block':2,'packing_policy':'sm86-only-v1','neuron_threads_per_walk':32,
             'physical_threads_per_cta':{'sm86':64,'sm120':32,'unknown':32},
             'walks_per_cta':{'sm86':2,'sm120':1,'unknown':1}}
-        manifest={'source_commit':source,'core_commit':'4fc13712e26567ad24bf6ec62ec41aab9e02cec7',
+        manifest={'source_commit':source,'core_profile':237,'core_commit':'4fc13712e26567ad24bf6ec62ec41aab9e02cec7',
             'algorithm_generation':'70d6e78b1ee4dec7c793436d8f3b43ffe515a68c179a107a90db773c20c3b23f',
             'task_sha256':'06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12',
             'population':32,'ann_bytes':1088,'advance_threshold':2920,'cuda_architectures':[86,120],
@@ -120,7 +120,7 @@ class PublicLinux(unittest.TestCase):
                 return subprocess.run(['bash','-c',block+'\nprintf "%s,%s" "$CODED_CUDA_WORKERS" "$CODED_CUDA_V1306_THREADS"'],
                     env=dict(os.environ,INSTALL_DIR=directory),capture_output=True,text=True)
             good=run(manifest);self.assertEqual(good.returncode,0,good.stderr);self.assertEqual(good.stdout,'512,32')
-            for key,value in [('core_commit','0'*40),('advance_threshold',2190),('cuda_default_workers',8),
+            for key,value in [('core_profile',236),('core_commit','0'*40),('advance_threshold',2190),('cuda_default_workers',8),
                                ('cuda_architectures',[86,89]),('algorithm_generation','0'*64)]:
                 bad=copy.deepcopy(manifest);bad[key]=value;self.assertNotEqual(run(bad).returncode,0,key)
             for key,value in [('requested_walks_per_block',2.0),('packing_policy','all-gpus-w2'),
