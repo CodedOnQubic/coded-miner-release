@@ -50,8 +50,8 @@ if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 && ( "$coded_mac_native_
     echo 'MACOS_BOOTSTRAP_QUALIFICATION_OVERRIDE=1'
     exec /bin/bash "$CODED_MAC_BOOTSTRAP_LOCAL" "$@"
   fi
-  mac_bootstrap_commit=19c7b528a93c9fe6e67e917d264b0e61e774c6d4
-  mac_bootstrap_sha=122cbf2338eb15afcf1bac574862fe34e1de98a800e3b963730f2ea0494a72ba
+  mac_bootstrap_commit=075a31856237bdd15fad4b25f4ec5477eddcdb13
+  mac_bootstrap_sha=b31e58521017bd89c7970428ddff43f949acbee4605848adc434c5e9af1e0c3d
   mac_bootstrap_dir="$HOME/.coded-miner/bootstrap"
   umask 077
   mkdir -p "$mac_bootstrap_dir"
