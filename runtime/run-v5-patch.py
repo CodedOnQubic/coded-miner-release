@@ -93,7 +93,16 @@ workers=manifest.get('cuda_default_workers',8)
 source=manifest.get('source_commit')
 expected_workers=(512 if source in ('7da5dbcbada2ab4d49bee922856c01db60215a4f',
     '94fced124b490eab6d6da30029f91a1fe96a21a3') else 8)
-if source=='94fced124b490eab6d6da30029f91a1fe96a21a3':
+mixed=isinstance(profile,dict) and profile.get('schema')=='coded.cuda.p32-build-profile.v2'
+if mixed:
+    import re
+    assert re.fullmatch('[0-9a-f]{40}',str(source)), 'mixed_profile_source_identity_required'
+    assert manifest.get('algorithm_generation')=='70d6e78b1ee4dec7c793436d8f3b43ffe515a68c179a107a90db773c20c3b23f', 'mixed_profile_algorithm_required'
+    binding=manifest.get('work_authority_build',{})
+    assert binding.get('core_commit')=='4fc13712e26567ad24bf6ec62ec41aab9e02cec7' and binding.get('source_commit')==source, 'mixed_profile_source_binding_required'
+    assert binding.get('build_authority_id')=='8619cb5be8d41bafe6a24e4c5b2377a9db5281d67ac088ecd36aa96f05a7653c' and binding.get('algorithm_generation')==manifest['algorithm_generation'], 'mixed_profile_build_binding_required'
+    expected_workers=512
+if source=='94fced124b490eab6d6da30029f91a1fe96a21a3' or mixed:
     assert manifest.get('core_commit')=='4fc13712e26567ad24bf6ec62ec41aab9e02cec7', 'qualified_core237_identity_required'
     assert manifest.get('task_sha256')=='06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12', 'qualified_core237_task_required'
     for key,value in (('population',32),('ann_bytes',1088),('advance_threshold',2920)):
@@ -111,6 +120,14 @@ else:
         'register_state':enabled,'fixed_point':enabled,'exact_cycle':enabled,
         'packed_lut':enabled,'undo_mutations':enabled,'cycle_index':enabled,
         'cpu_geometry_changed':False,'cuda_geometry_changed':False,'hardware_qualification_implied':False}
+    if mixed:
+        assert enabled is True, 'mixed_profile_must_be_explicitly_enabled'
+        assert type(profile.get('requested_walks_per_block')) is int and type(profile.get('neuron_threads_per_walk')) is int, 'mixed_profile_integer_geometry_required'
+        assert all(isinstance(profile.get(k),dict) and all(type(v) is int for v in profile[k].values()) for k in ('physical_threads_per_cta','walks_per_cta')), 'mixed_profile_integer_cta_required'
+        expected.update(schema='coded.cuda.p32-build-profile.v2',requested_walks_per_block=2,
+            packing_policy='sm86-only-v1',neuron_threads_per_walk=32,
+            physical_threads_per_cta={'sm86':64,'sm120':32,'unknown':32},
+            walks_per_cta={'sm86':2,'sm120':1,'unknown':1})
     assert profile==expected and all(type(profile[k]) is bool for k,v in expected.items() if type(v) is bool), 'invalid_cuda_profile'
     assert not enabled or manifest.get('population')==32, 'optimized_cuda_requires_p32'
     assert manifest.get('hybrid_profile',{}).get('partial_flush_ms')==wait, 'cuda_collection_contract_mismatch'

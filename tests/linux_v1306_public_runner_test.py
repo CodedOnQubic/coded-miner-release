@@ -91,6 +91,46 @@ class PublicLinux(unittest.TestCase):
                 if enabled:
                     self.assertNotEqual(execute(dict(manifest,population=64)).returncode,0)
 
+    def test_new_source_mixed_profile_requires_exact_generation_and_cta(self):
+        import copy,json,os
+        begin=self.text.index('  # CODED_LINUX_V1306_CUDA_PROFILE:')
+        end=self.text.index('  # CODED_LINUX_V1306_CUDA_PROFILE_END',begin)
+        block=self.text[begin:end]
+        source='a'*40
+        profile={'schema':'coded.cuda.p32-build-profile.v2','enabled':True,
+            'threads_per_block':32,'large_batch_collection_cap_ms':120,
+            **{k:True for k in ('register_state','fixed_point','exact_cycle','packed_lut','undo_mutations','cycle_index')},
+            'cpu_geometry_changed':False,'cuda_geometry_changed':False,'hardware_qualification_implied':False,
+            'requested_walks_per_block':2,'packing_policy':'sm86-only-v1','neuron_threads_per_walk':32,
+            'physical_threads_per_cta':{'sm86':64,'sm120':32,'unknown':32},
+            'walks_per_cta':{'sm86':2,'sm120':1,'unknown':1}}
+        manifest={'source_commit':source,'core_commit':'4fc13712e26567ad24bf6ec62ec41aab9e02cec7',
+            'algorithm_generation':'70d6e78b1ee4dec7c793436d8f3b43ffe515a68c179a107a90db773c20c3b23f',
+            'task_sha256':'06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12',
+            'population':32,'ann_bytes':1088,'advance_threshold':2920,'cuda_architectures':[86,120],
+            'cuda_default_workers':512,'cuda_default_threads_per_block':32,'hybrid_profile':{'partial_flush_ms':120},
+            'cuda_optimized_profile':profile}
+        manifest['work_authority_build']={'source_commit':source,'core_commit':manifest['core_commit'],
+            'algorithm_generation':manifest['algorithm_generation'],
+            'build_authority_id':'8619cb5be8d41bafe6a24e4c5b2377a9db5281d67ac088ecd36aa96f05a7653c'}
+        with tempfile.TemporaryDirectory(prefix='coded-mixed-guard-') as directory:
+            path=Path(directory)/'release_manifest.json'
+            def run(value):
+                path.write_text(json.dumps(value))
+                return subprocess.run(['bash','-c',block+'\nprintf "%s,%s" "$CODED_CUDA_WORKERS" "$CODED_CUDA_V1306_THREADS"'],
+                    env=dict(os.environ,INSTALL_DIR=directory),capture_output=True,text=True)
+            good=run(manifest);self.assertEqual(good.returncode,0,good.stderr);self.assertEqual(good.stdout,'512,32')
+            for key,value in [('core_commit','0'*40),('advance_threshold',2190),('cuda_default_workers',8),
+                               ('cuda_architectures',[86,89]),('algorithm_generation','0'*64)]:
+                bad=copy.deepcopy(manifest);bad[key]=value;self.assertNotEqual(run(bad).returncode,0,key)
+            for key,value in [('requested_walks_per_block',2.0),('packing_policy','all-gpus-w2'),
+                               ('physical_threads_per_cta',{'sm86':64,'sm120':64,'unknown':64}),
+                               ('walks_per_cta',{'sm86':2,'sm120':2,'unknown':2})]:
+                bad=copy.deepcopy(manifest);bad['cuda_optimized_profile'][key]=value
+                self.assertNotEqual(run(bad).returncode,0,key)
+            bad=copy.deepcopy(manifest);bad['work_authority_build']['source_commit']='b'*40
+            self.assertNotEqual(run(bad).returncode,0)
+
     def test_explicit_mac_routes_both_channels_without_replacing_legacy_latest(self):
         root=(ROOT/'run.sh').read_text().split('CODED_PUBLIC_RUNNER_BASE_COMMIT=',1)[0]
         with tempfile.TemporaryDirectory(prefix='coded-mac-root-route-') as d:
