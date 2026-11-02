@@ -32,16 +32,17 @@ while (($#)); do
       case "$option" in --wallet) wallet="$1";; --worker) worker="$1";; --pool) pool="$1";; --threads) threads="$1";; esac ;;
     -[0-9]*) threads="${1#-}" ;;
     --help|-h)
-      echo 'CODED Mac: WALLET=... WORKER=... bash run.sh --beta [--threads N]'
+      echo 'CODED Mac: WALLET=... WORKER=... bash run.sh --beta [--backend=neon] [--threads N]'
       echo 'Mac selects the packaged CPU/GPU runtime locally. Threads default to auto. Apple Silicon, macOS 12+.'; exit 0 ;;
     *) echo "ERROR: unsupported Mac argument: $1" >&2; exit 64 ;;
   esac
   shift
 done
-# A public start exposes only Mac. An already running supervisor may retain its
+# Public starts expose automatic Mac selection and explicit CPU-only NEON.
+# An already running supervisor may retain its
 # native lane across an update; the new package validates the stop/hash receipt
 # before it can execute. Environment presence alone never authorizes execution.
-[[ "$backend" == mac || ( -n "${CODED_MACOS_SAME_LAYOUT_RESUME:-}" && "$backend" =~ ^(neon|metal|hybrid)$ ) ]] || exit 64
+[[ "$backend" == mac || "$backend" == neon || ( -n "${CODED_MACOS_SAME_LAYOUT_RESUME:-}" && "$backend" =~ ^(metal|hybrid)$ ) ]] || exit 64
 [[ "$threads" =~ ^[0-9]+$ && "$threads" -le 1024 ]] || exit 64
 [[ "$wallet" =~ ^[A-Z]{60}$ && "$worker" =~ ^[A-Za-z0-9_.-]{1,80}$ ]] || { echo 'ERROR: set a valid WALLET and WORKER' >&2; exit 64; }
 channel_url="${CODED_MAC_CHANNEL_URL:-https://api.codedonqubic.com/admin/release/channel-status}"

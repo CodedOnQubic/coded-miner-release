@@ -137,7 +137,9 @@ class PublicLinux(unittest.TestCase):
             helper=Path(d)/'helper.sh';helper.write_text('printf "NATIVE:%s" "$*"\n')
             script='uname() { case "$1" in -s) echo Darwin;; -m) echo arm64;; esac; }\n'+root+'\necho LEGACY_PATH\n'
             env=dict(__import__('os').environ,CODED_ALLOW_FEATURE_VALIDATION='1',CODED_MAC_BOOTSTRAP_LOCAL=str(helper))
-            for args in (['--beta'],['--latest','--backend=mac'],['--backend','mac','--latest']):
+            for args in (['--beta'],['--latest','--backend=mac'],['--backend','mac','--latest'],
+                         ['--beta','--backend=neon'],['--latest','--backend=neon'],
+                         ['--backend','neon','--latest']):
                 result=subprocess.run(['bash','-s','--',*args],input=script,env=env,capture_output=True,text=True)
                 self.assertEqual(result.returncode,0,result.stderr)
                 self.assertIn('NATIVE:',result.stdout)

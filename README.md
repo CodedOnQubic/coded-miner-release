@@ -55,7 +55,7 @@ Open Terminal and run:
 WALLET=YOUR_QUBIC_WALLET WORKER=YOUR_WORKER_NAME bash -c "$(curl -fsSL https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/main/run.sh)" -- --beta --backend=mac
 ```
 
-Mac exposes one choice: **Mac**. It selects a correctness-checked local CPU/GPU configuration with a bounded startup probe and safe defaults. Add `--threads 8` for a manual thread count.
+The frontend Mac download and copied command use **CPU-only NEON** while Hybrid performance is being improved. Use `--backend=neon` with the official `run.sh` for the same explicit selection. Threads remain automatic; add `--threads 8` for a manual count. The existing `--backend=mac` automatic CPU/GPU selection remains available.
 
 The ARM package includes Python and its precompiled Metal library. A mining client needs no Homebrew, Xcode, host Python or extra compiler. Apple Silicon M1–M5 compatibility is the packaging target; this is not a claim that every chip generation has been physically qualified. Read the exact release evidence for tested hardware. macOS 12 or newer is required by the current package.
 
