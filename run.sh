@@ -37,11 +37,11 @@ coded_mac_backend_value=0
 case "${CODED_BETA_REQUESTED:-${CODED_BETA:-${BETA:-}}}" in 1|yes|true|beta) coded_mac_native_beta=1 ;; esac
 for coded_mac_arg in "$@"; do
   if [[ "$coded_mac_backend_value" == 1 ]]; then
-    [[ "$coded_mac_arg" != mac ]] || coded_mac_native_request=1
+    case "$coded_mac_arg" in mac|neon) coded_mac_native_request=1 ;; esac
     coded_mac_backend_value=0
   fi
   case "$coded_mac_arg" in -beta|--beta) coded_mac_native_beta=1 ;; -latest|--latest) coded_mac_native_beta=0 ;; esac
-  case "$coded_mac_arg" in --backend=mac) coded_mac_native_request=1 ;; --backend) coded_mac_backend_value=1 ;; esac
+  case "$coded_mac_arg" in --backend=mac|--backend=neon) coded_mac_native_request=1 ;; --backend) coded_mac_backend_value=1 ;; esac
 done
 # Apple Silicon Beta bootstraps before any host Python lookup.
 if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 && ( "$coded_mac_native_beta" == 1 || "$coded_mac_native_request" == 1 ) ]]; then
@@ -50,8 +50,8 @@ if [[ "$(uname -s)" == Darwin && "$(uname -m)" == arm64 && ( "$coded_mac_native_
     echo 'MACOS_BOOTSTRAP_QUALIFICATION_OVERRIDE=1'
     exec /bin/bash "$CODED_MAC_BOOTSTRAP_LOCAL" "$@"
   fi
-  mac_bootstrap_commit=075a31856237bdd15fad4b25f4ec5477eddcdb13
-  mac_bootstrap_sha=b31e58521017bd89c7970428ddff43f949acbee4605848adc434c5e9af1e0c3d
+  mac_bootstrap_commit=69190df45317f486e697c26f94be9610418a8942
+  mac_bootstrap_sha=1f5dd15dfe5d982b22064eebebb922891892366c218046ee3d2ba89864480b19
   mac_bootstrap_dir="$HOME/.coded-miner/bootstrap"
   umask 077
   mkdir -p "$mac_bootstrap_dir"
