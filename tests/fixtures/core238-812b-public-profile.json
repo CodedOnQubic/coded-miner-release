@@ -1,0 +1,82 @@
+{
+  "advance_threshold": 2920,
+  "algorithm_generation": "3564fbea30178f7d00e7fced880272d7530eeec024e14a0655b7b404136692e6",
+  "ann_bytes": 1088,
+  "commit": "812b99f2648cd524fa9e7611647a5d02fc119c23",
+  "core_commit": "8cd0dbfa559b2b7f5666853649ebe352b1a47578",
+  "core_profile": 238,
+  "cuda_architectures": [
+    86,
+    120
+  ],
+  "cuda_default_threads_per_block": 32,
+  "cuda_default_workers": 512,
+  "cuda_optimized_profile": {
+    "cpu_geometry_changed": false,
+    "cuda_geometry_changed": false,
+    "cycle_index": true,
+    "enabled": true,
+    "exact_cycle": true,
+    "fixed_point": true,
+    "hardware_qualification_implied": false,
+    "large_batch_collection_cap_ms": 120,
+    "neuron_threads_per_walk": 32,
+    "packed_lut": true,
+    "packing_policy": "sm86-only-v1",
+    "physical_threads_per_cta": {
+      "sm120": 32,
+      "sm86": 64,
+      "unknown": 32
+    },
+    "register_state": true,
+    "requested_walks_per_block": 2,
+    "schema": "coded.cuda.p32-build-profile.v2",
+    "threads_per_block": 32,
+    "undo_mutations": true,
+    "walks_per_cta": {
+      "sm120": 1,
+      "sm86": 2,
+      "unknown": 1
+    }
+  },
+  "hybrid_profile": {
+    "cost_order": "fixed_older_parent_header_cost_only_opt_in",
+    "cost_order_default": false,
+    "cpu_attempts": 4,
+    "cpu_workers": 24,
+    "cuda_cursor_batch_allowed": [
+      1,
+      2,
+      4
+    ],
+    "cuda_cursor_batch_default": 4,
+    "cuda_workers": 512,
+    "existing_geometry_fallback": true,
+    "geometry": "persistent-gpu-growth-after-verified-drain",
+    "logical_cuda_workers_unchanged": true,
+    "mode_switch": "verified-conservative-cursor-conversion",
+    "partial_flush_ms": 120,
+    "submit_authority": "ant_v3_durable_coordinator"
+  },
+  "population": 32,
+  "preparation_only": false,
+  "publishable_source": true,
+  "source_commit": "812b99f2648cd524fa9e7611647a5d02fc119c23",
+  "task_sha256": "06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12",
+  "work_authority_build": {
+    "algorithm_generation": "3564fbea30178f7d00e7fced880272d7530eeec024e14a0655b7b404136692e6",
+    "ann_bytes": 1088,
+    "build_authority_id": "7dd8dfdd02c30e737a4823c85209e677456c0ee6e72ddb18d4628e78a9e3ada8",
+    "contract_sha256": "b56e3b2deb715fe260b483961dfb8251879a83518afbe67932f5825fa9bd9650",
+    "core_commit": "8cd0dbfa559b2b7f5666853649ebe352b1a47578",
+    "core_profile": 238,
+    "issuer_key_id": "66ca53fed3db028d6cccb75d76d9ba57d66c9570b5d04c0347030980f91ba6b0",
+    "population": 32,
+    "qualification": "BUILD_INPUT_ONLY_NATIVE_RUNTIME_AND_PACKAGE_QUALIFICATION_REQUIRED",
+    "required": true,
+    "schema": "coded.work-authority.build-input.v1",
+    "source_commit": "812b99f2648cd524fa9e7611647a5d02fc119c23",
+    "task_sha256": "06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12",
+    "test_only_package": false
+  }
+}
