@@ -1,5 +1,6 @@
 """Run the actual public runner's profile guard; never execute a miner."""
 import copy
+import hashlib
 import importlib.util
 import json
 import os
@@ -16,7 +17,11 @@ patch=importlib.util.module_from_spec(spec);spec.loader.exec_module(patch)
 class Core238PublicProfile(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        core=subprocess.check_output(['git','-C',str(ROOT),'show','d8ddc3f38a105233a6327920373a3ebb2939a55f:run.sh'],text=True)
+        if os.environ.get('CODED_PUBLIC_CORE_LAUNCHER'):
+            core=Path(os.environ['CODED_PUBLIC_CORE_LAUNCHER']).read_text()
+            assert hashlib.sha256(core.encode()).hexdigest()=='07e1fef0bfff2fa9810737afa526bff8b3c59feab9c78bd76d9c87280a631bad'
+        else:
+            core=subprocess.check_output(['git','-C',str(ROOT),'show','d8ddc3f38a105233a6327920373a3ebb2939a55f:run.sh'],text=True)
         transformed=patch.transform(core,'https://example.invalid/not-downloaded')
         subprocess.run(['bash','-n'],input=transformed,text=True,check=True)
         cls.guard=transformed.split("<<'PYCUDAPROFILE'\n",1)[1].split('\nPYCUDAPROFILE',1)[0]
@@ -78,5 +83,33 @@ class Core238PublicProfile(unittest.TestCase):
             with self.subTest(key=key):
                 bad=copy.deepcopy(self.manifest);bad['cuda_optimized_profile'][key]=value
                 self.assertNotEqual(self.run_guard(bad).returncode,0)
+
+
+class Core238E20ePublicProfile(Core238PublicProfile):
+    """Same actual public guard, exact e20 source/contract; never starts Native."""
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.previous_manifest=copy.deepcopy(cls.manifest)
+        cls.manifest=copy.deepcopy(cls.manifest)
+        source='e20efa242ef934105acc73ccae1af41fcc1d6b39'
+        cls.manifest.update(source_commit=source,commit=source)
+        cls.manifest['work_authority_build'].update(source_commit=source,
+            contract_sha256='cfdeedcb89c92b006ce54b8fd871f79f9a47a8926ec70f43ff083ca00efb68c7')
+        if os.environ.get('CODED_E20E_FINAL_PROFILE_MANIFEST'):
+            cls.manifest=json.loads(Path(os.environ['CODED_E20E_FINAL_PROFILE_MANIFEST']).read_text())
+            assert cls.manifest['source_commit']==source
+
+    def test_source_specific_contracts_cannot_be_exchanged(self):
+        for manifest,wrong in ((self.manifest,self.previous_manifest['work_authority_build']['contract_sha256']),
+                (self.previous_manifest,self.manifest['work_authority_build']['contract_sha256'])):
+            bad=copy.deepcopy(manifest);bad['work_authority_build']['contract_sha256']=wrong
+            self.assertNotEqual(self.run_guard(bad).returncode,0)
+
+    def test_unlisted_matching_core238_source_is_not_admitted(self):
+        bad=copy.deepcopy(self.manifest);source='a'*40
+        bad.update(source_commit=source,commit=source)
+        bad['work_authority_build']['source_commit']=source
+        self.assertNotEqual(self.run_guard(bad).returncode,0)
 
 if __name__=='__main__':unittest.main()
