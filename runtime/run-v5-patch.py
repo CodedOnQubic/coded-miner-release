@@ -94,7 +94,11 @@ source=manifest.get('source_commit')
 expected_workers=(512 if source in ('7da5dbcbada2ab4d49bee922856c01db60215a4f',
     '94fced124b490eab6d6da30029f91a1fe96a21a3') else 8)
 mixed=isinstance(profile,dict) and profile.get('schema')=='coded.cuda.p32-build-profile.v2'
-core238=source=='812b99f2648cd524fa9e7611647a5d02fc119c23'
+core238_contracts={
+    '812b99f2648cd524fa9e7611647a5d02fc119c23':'b56e3b2deb715fe260b483961dfb8251879a83518afbe67932f5825fa9bd9650',
+    'e20efa242ef934105acc73ccae1af41fcc1d6b39':'cfdeedcb89c92b006ce54b8fd871f79f9a47a8926ec70f43ff083ca00efb68c7',
+}
+core238=source in core238_contracts
 if core238:
     assert mixed, 'qualified_core238_mixed_profile_required'
     assert type(manifest.get('core_profile')) is int and manifest['core_profile']==238, 'qualified_core238_profile_required'
@@ -108,7 +112,7 @@ if core238:
     assert type(binding.get('core_profile')) is int and binding['core_profile']==238, 'qualified_core238_binding_profile_required'
     assert binding.get('source_commit')==source and binding.get('core_commit')==manifest['core_commit'], 'qualified_core238_source_binding_required'
     assert binding.get('algorithm_generation')==manifest['algorithm_generation'] and binding.get('build_authority_id')=='7dd8dfdd02c30e737a4823c85209e677456c0ee6e72ddb18d4628e78a9e3ada8', 'qualified_core238_build_binding_required'
-    assert binding.get('contract_sha256')=='b56e3b2deb715fe260b483961dfb8251879a83518afbe67932f5825fa9bd9650' and binding.get('issuer_key_id')=='66ca53fed3db028d6cccb75d76d9ba57d66c9570b5d04c0347030980f91ba6b0', 'qualified_core238_contract_issuer_required'
+    assert binding.get('contract_sha256')==core238_contracts[source] and binding.get('issuer_key_id')=='66ca53fed3db028d6cccb75d76d9ba57d66c9570b5d04c0347030980f91ba6b0', 'qualified_core238_contract_issuer_required'
     assert binding.get('task_sha256')==manifest['task_sha256'], 'qualified_core238_binding_task_required'
     for key,value in (('population',32),('ann_bytes',1088),('advance_threshold',2920)):
         assert type(manifest.get(key)) is int and manifest[key]==value, 'qualified_core238_geometry_required'
