@@ -8,6 +8,10 @@
 
 set -Eeuo pipefail
 
+# Stable public access UI, retained from the proven Windows/Unix console.
+# No progress, epoch, rate or acceptance is invented before native telemetry.
+printf '\n+------------------------------------------------------------------------------+\n|                               $0.01 IS CODED                                 |\n+------------------------------------------------------------------------------+\n\n'
+
 # coded.public.onboarding.v1: explicit CUDA, exclusive CPU selection, no
 # argument-order-dependent mode. Validate before downloads or policy lookups.
 coded_cpu_request=""
