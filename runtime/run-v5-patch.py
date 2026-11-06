@@ -97,6 +97,7 @@ mixed=isinstance(profile,dict) and profile.get('schema')=='coded.cuda.p32-build-
 core238_contracts={
     '812b99f2648cd524fa9e7611647a5d02fc119c23':'b56e3b2deb715fe260b483961dfb8251879a83518afbe67932f5825fa9bd9650',
     'e20efa242ef934105acc73ccae1af41fcc1d6b39':'cfdeedcb89c92b006ce54b8fd871f79f9a47a8926ec70f43ff083ca00efb68c7',
+    '044d1bea02c8f0253ce71f938658d57db0b3793f':'3ae73d7eb788bd55ca2310477eae53941194a75680d4033a6e6effa27dfee7e2',
 }
 core238=source in core238_contracts
 if core238:
