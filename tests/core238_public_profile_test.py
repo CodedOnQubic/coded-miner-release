@@ -112,4 +112,16 @@ class Core238E20ePublicProfile(Core238PublicProfile):
         bad['work_authority_build']['source_commit']=source
         self.assertNotEqual(self.run_guard(bad).returncode,0)
 
+class Core238ReadBackpressurePublicProfile(Core238E20ePublicProfile):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.previous_manifest = copy.deepcopy(cls.manifest)
+        cls.manifest = copy.deepcopy(cls.manifest)
+        source = '044d1bea02c8f0253ce71f938658d57db0b3793f'
+        cls.manifest.update(source_commit=source, commit=source)
+        cls.manifest['work_authority_build'].update(source_commit=source,
+            contract_sha256='3ae73d7eb788bd55ca2310477eae53941194a75680d4033a6e6effa27dfee7e2')
+
+
 if __name__=='__main__':unittest.main()
