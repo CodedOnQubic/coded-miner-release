@@ -9,6 +9,7 @@ import importlib.util
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -125,21 +126,14 @@ def main() -> int:
     for idx, block in enumerate(blocks):
         compile(block, f"run.sh:python-heredoc-{idx}", "exec")
 
-    # Windows: same authority before the old AUTO detector. The wrapper sets
-    # request inputs only and blocks backend shorthand from overwriting policy.
-    assert POLICY_MARKER in ps_text
-    assert PINNED_PUBLIC_RUNNER in ps_text
-    assert "/analytics2/runtime-policy" in ps_text
-    assert '$env:CODED_HARDWARE_TUNE_REQUESTED_BACKEND = $policyBackend' in ps_text
-    assert '$env:CODED_PUBLIC_BACKEND_REQUEST_SNAPSHOT = $policyBackend' in ps_text
-    assert '$env:BACKEND = $policyBackend' in ps_text
-    assert '$env:CODED_RUNTIME_POLICY_AUTHORITY = "miner_default_profiles"' in ps_text
-    assert 'refusing AUTO/backend fallback' in ps_text
-    assert 'CODED\\runtime-policy' in ps_text
-    assert "'^--?backend='" in ps_text
-    assert '$env:CODED_KERNEL_BACKEND = $policyBackend' not in ps_text
-    assert '$env:CODED_SELECTED_BACKEND = $policyBackend' not in ps_text
-    assert '& $delegate @params' in ps_text
+    # Windows delegates to its own pinned bootstrap. Keep both its public
+    # argument forwarding and the separate qualification guard under CI.
+    assert "https://raw.githubusercontent.com/CodedOnQubic/coded-miner-release/'+$commit+'/run-windows.ps1" in ps_text
+    delegate = ps_text.index('& $helper @params')
+    assert ps_text.index("if ((Sha $temporary) -ne $expected)") < delegate
+    assert ps_text.index("if ((Sha $helper) -ne $expected)") < delegate
+    assert '$params=@{Wallet=$Wallet;Worker=$Worker;Threads=$Threads;Backend=$Backend;Pool=$Pool;Beta=$Beta}' in ps_text
+    subprocess.run([sys.executable, str(ROOT / "tests/windows_qualification_source_contract_test.py")], check=True)
 
     subprocess.run(["bash", "-n", str(RUN_SH)], check=True)
     print("v5_public_runtime_policy_bridge_contract=PASS")
