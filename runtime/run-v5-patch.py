@@ -94,26 +94,38 @@ source=manifest.get('source_commit')
 expected_workers=(512 if source in ('7da5dbcbada2ab4d49bee922856c01db60215a4f',
     '94fced124b490eab6d6da30029f91a1fe96a21a3') else 8)
 mixed=isinstance(profile,dict) and profile.get('schema')=='coded.cuda.p32-build-profile.v2'
-core238_contracts={
-    '812b99f2648cd524fa9e7611647a5d02fc119c23':'b56e3b2deb715fe260b483961dfb8251879a83518afbe67932f5825fa9bd9650',
-    'e20efa242ef934105acc73ccae1af41fcc1d6b39':'cfdeedcb89c92b006ce54b8fd871f79f9a47a8926ec70f43ff083ca00efb68c7',
-    '044d1bea02c8f0253ce71f938658d57db0b3793f':'3ae73d7eb788bd55ca2310477eae53941194a75680d4033a6e6effa27dfee7e2',
+legacy_core238_identity=(
+    '8cd0dbfa559b2b7f5666853649ebe352b1a47578',
+    '3564fbea30178f7d00e7fced880272d7530eeec024e14a0655b7b404136692e6',
+    '7dd8dfdd02c30e737a4823c85209e677456c0ee6e72ddb18d4628e78a9e3ada8',
+)
+core238_profiles={
+    '812b99f2648cd524fa9e7611647a5d02fc119c23':(*legacy_core238_identity,'b56e3b2deb715fe260b483961dfb8251879a83518afbe67932f5825fa9bd9650'),
+    'e20efa242ef934105acc73ccae1af41fcc1d6b39':(*legacy_core238_identity,'cfdeedcb89c92b006ce54b8fd871f79f9a47a8926ec70f43ff083ca00efb68c7'),
+    '044d1bea02c8f0253ce71f938658d57db0b3793f':(*legacy_core238_identity,'3ae73d7eb788bd55ca2310477eae53941194a75680d4033a6e6effa27dfee7e2'),
+    'abb3c413c9b9f285f7b467224750302e76b95c1b':(
+        '3d5a79c978b8429f30bdcb2b2554ed5921c64543',
+        'aaec6d16e3b3bbd97e534d6f4504a19a672d70cc8c51b512fab8b374936fcbc3',
+        '36500fc8e4c60af526b0d05b1c0025dacaa6c11458b30243ea9672ab8e899be5',
+        '0770040491d3e721107f73535a1ff85fe7102140b985ba7aa61816c063219153',
+    ),
 }
-core238=source in core238_contracts
+core238=source in core238_profiles
 if core238:
+    expected_core,expected_algorithm,expected_authority,expected_contract=core238_profiles[source]
     assert mixed, 'qualified_core238_mixed_profile_required'
     assert type(manifest.get('core_profile')) is int and manifest['core_profile']==238, 'qualified_core238_profile_required'
     assert manifest.get('commit')==source, 'qualified_core238_source_required'
-    assert manifest.get('core_commit')=='8cd0dbfa559b2b7f5666853649ebe352b1a47578', 'qualified_core238_identity_required'
-    assert manifest.get('algorithm_generation')=='3564fbea30178f7d00e7fced880272d7530eeec024e14a0655b7b404136692e6', 'qualified_core238_algorithm_required'
+    assert manifest.get('core_commit')==expected_core, 'qualified_core238_identity_required'
+    assert manifest.get('algorithm_generation')==expected_algorithm, 'qualified_core238_algorithm_required'
     assert manifest.get('task_sha256')=='06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12', 'qualified_core238_task_required'
     assert manifest.get('preparation_only') is False and manifest.get('publishable_source') is True, 'qualified_core238_final_package_required'
     binding=manifest.get('work_authority_build',{})
     assert binding.get('schema')=='coded.work-authority.build-input.v1' and binding.get('required') is True and binding.get('test_only_package') is False, 'qualified_core238_work_authority_required'
     assert type(binding.get('core_profile')) is int and binding['core_profile']==238, 'qualified_core238_binding_profile_required'
     assert binding.get('source_commit')==source and binding.get('core_commit')==manifest['core_commit'], 'qualified_core238_source_binding_required'
-    assert binding.get('algorithm_generation')==manifest['algorithm_generation'] and binding.get('build_authority_id')=='7dd8dfdd02c30e737a4823c85209e677456c0ee6e72ddb18d4628e78a9e3ada8', 'qualified_core238_build_binding_required'
-    assert binding.get('contract_sha256')==core238_contracts[source] and binding.get('issuer_key_id')=='66ca53fed3db028d6cccb75d76d9ba57d66c9570b5d04c0347030980f91ba6b0', 'qualified_core238_contract_issuer_required'
+    assert binding.get('algorithm_generation')==manifest['algorithm_generation'] and binding.get('build_authority_id')==expected_authority, 'qualified_core238_build_binding_required'
+    assert binding.get('contract_sha256')==expected_contract and binding.get('issuer_key_id')=='66ca53fed3db028d6cccb75d76d9ba57d66c9570b5d04c0347030980f91ba6b0', 'qualified_core238_contract_issuer_required'
     assert binding.get('task_sha256')==manifest['task_sha256'], 'qualified_core238_binding_task_required'
     for key,value in (('population',32),('ann_bytes',1088),('advance_threshold',2920)):
         assert type(manifest.get(key)) is int and manifest[key]==value, 'qualified_core238_geometry_required'

@@ -124,4 +124,33 @@ class Core238ReadBackpressurePublicProfile(Core238E20ePublicProfile):
             contract_sha256='3ae73d7eb788bd55ca2310477eae53941194a75680d4033a6e6effa27dfee7e2')
 
 
+class Core238RotationDrainPublicProfile(Core238ReadBackpressurePublicProfile):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.previous_manifest = copy.deepcopy(cls.manifest)
+        cls.manifest = copy.deepcopy(cls.manifest)
+        source = 'abb3c413c9b9f285f7b467224750302e76b95c1b'
+        core = '3d5a79c978b8429f30bdcb2b2554ed5921c64543'
+        algorithm = 'aaec6d16e3b3bbd97e534d6f4504a19a672d70cc8c51b512fab8b374936fcbc3'
+        cls.manifest.update(source_commit=source, commit=source, core_commit=core, algorithm_generation=algorithm)
+        cls.manifest['work_authority_build'].update(
+            source_commit=source, core_commit=core, algorithm_generation=algorithm,
+            build_authority_id='36500fc8e4c60af526b0d05b1c0025dacaa6c11458b30243ea9672ab8e899be5',
+            contract_sha256='0770040491d3e721107f73535a1ff85fe7102140b985ba7aa61816c063219153',
+        )
+        if os.environ.get('CODED_ABB3_FINAL_PROFILE_MANIFEST'):
+            cls.manifest = json.loads(Path(os.environ['CODED_ABB3_FINAL_PROFILE_MANIFEST']).read_text())
+            assert cls.manifest['source_commit'] == source
+
+    def test_core238_build_generation_cannot_be_exchanged(self):
+        for target, other in ((self.manifest, self.previous_manifest), (self.previous_manifest, self.manifest)):
+            bad = copy.deepcopy(target)
+            for key in ('core_commit', 'algorithm_generation'):
+                bad[key] = other[key]
+                bad['work_authority_build'][key] = other[key]
+            bad['work_authority_build']['build_authority_id'] = other['work_authority_build']['build_authority_id']
+            self.assertNotEqual(self.run_guard(bad).returncode, 0)
+
+
 if __name__=='__main__':unittest.main()
