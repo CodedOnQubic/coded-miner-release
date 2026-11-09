@@ -153,4 +153,26 @@ class Core238RotationDrainPublicProfile(Core238ReadBackpressurePublicProfile):
             self.assertNotEqual(self.run_guard(bad).returncode, 0)
 
 
+class Core238QcNonceCasPublicProfile(Core238RotationDrainPublicProfile):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.previous_manifest = copy.deepcopy(cls.manifest)
+        cls.manifest = copy.deepcopy(cls.manifest)
+        source = '6426949b975df890954dd0252319fb8e119ece65'
+        cls.manifest.update(source_commit=source, commit=source)
+        cls.manifest['work_authority_build'].update(
+            source_commit=source,
+            contract_sha256='05dd226cd700b17612b11658aa3da696068e57855cffc38aae4494fc4d2bdbb9',
+        )
+        if os.environ.get('CODED_QC_NONCE_CAS_FINAL_PROFILE_MANIFEST'):
+            cls.manifest = json.loads(Path(os.environ['CODED_QC_NONCE_CAS_FINAL_PROFILE_MANIFEST']).read_text())
+            assert cls.manifest['source_commit'] == source
+
+    def test_core238_build_generation_cannot_be_exchanged(self):
+        bad = copy.deepcopy(self.manifest)
+        bad['work_authority_build']['contract_sha256'] = self.previous_manifest['work_authority_build']['contract_sha256']
+        self.assertNotEqual(self.run_guard(bad).returncode, 0)
+
+
 if __name__=='__main__':unittest.main()
