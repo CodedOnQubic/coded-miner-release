@@ -115,6 +115,12 @@ core238_profiles={
         '36500fc8e4c60af526b0d05b1c0025dacaa6c11458b30243ea9672ab8e899be5',
         '05dd226cd700b17612b11658aa3da696068e57855cffc38aae4494fc4d2bdbb9',
     ),
+    '0d9169d47712fc46cd1739ae0e6c91611177b4d8':(
+        '3d5a79c978b8429f30bdcb2b2554ed5921c64543',
+        'aaec6d16e3b3bbd97e534d6f4504a19a672d70cc8c51b512fab8b374936fcbc3',
+        '36500fc8e4c60af526b0d05b1c0025dacaa6c11458b30243ea9672ab8e899be5',
+        'c0fc8cefd061431a095a325f6f59606202fca4a8831ff4ebdfc0f3218fc36d6f',
+    ),
 }
 core238=source in core238_profiles
 if core238:
