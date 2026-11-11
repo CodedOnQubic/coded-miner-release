@@ -123,7 +123,30 @@ core238_profiles={
     ),
 }
 core238=source in core238_profiles
-if core238:
+core239_profiles={'558cd45eca70a57ca390fd78f67c2fa88ebb8bd5': 'cb2d3b40a0a3ac29b3e362b33df9acd38b1944596435f54fd06e6ab3efaf7bc8', 'a65d4f92cd34d3cad468afc4a1e4777177b6e77e': 'd04cbf7ca8682ecd50dd976aba301f3bc9e6d806209386e3770881f616b7fbee'}
+core239=(source in core239_profiles or manifest.get('core_profile')==239
+    or manifest.get('population')==1024 or manifest.get('core_commit')=='9af0d56f2566da9b8156dae068a2e72109bd30ae')
+if core239:
+    import re
+    assert source in core239_profiles and manifest.get('commit')==source, 'qualified_core239_exact_source_required'
+    assert manifest.get('core_commit')=='9af0d56f2566da9b8156dae068a2e72109bd30ae' and manifest.get('algorithm_generation')=='fb9818facafd485b5c629a942fae5a8fcf66dfa0c9b18a53e90950667d80eb3e', 'qualified_core239_original_authority_required'
+    assert manifest.get('task_sha256')=='06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12', 'qualified_core239_task_required'
+    assert manifest.get('preparation_only') is False and manifest.get('publishable_source') is True and manifest.get('release_channel')=='beta', 'qualified_core239_final_package_required'
+    assert manifest.get('publication_authorized') is False and manifest.get('rollout_authorized') is False, 'qualified_core239_no_latest_mutation'
+    assert manifest.get('p32_package_policy_sha256')=='99e3695a4a369924ef32d2baf8d102df428c062bf082e1e7b860afe4fad82c9c' and manifest.get('p32_runtime_package_qualification')=='PASS_REVIEWED_FINAL_NATIVE_PACKAGE', 'qualified_core239_final_policy_required'
+    assert re.fullmatch('[0-9a-f]{64}',str(manifest.get('p32_final_native_certificate_sha256',''))), 'qualified_core239_certificate_required'
+    binding=manifest.get('work_authority_build',{})
+    assert binding.get('schema')=='coded.work-authority.build-input.v1' and binding.get('required') is True and binding.get('test_only_package') is False, 'qualified_core239_require_on'
+    assert binding.get('source_commit')==source and binding.get('core_commit')=='9af0d56f2566da9b8156dae068a2e72109bd30ae' and binding.get('algorithm_generation')=='fb9818facafd485b5c629a942fae5a8fcf66dfa0c9b18a53e90950667d80eb3e', 'qualified_core239_source_binding_required'
+    assert binding.get('build_authority_id')=='f817927ea48efe61ca18ec584eafbe063ab23dca9b772ffb2714987ef37e1da6' and binding.get('contract_sha256')==core239_profiles[source] and binding.get('issuer_key_id')=='66ca53fed3db028d6cccb75d76d9ba57d66c9570b5d04c0347030980f91ba6b0' and binding.get('task_sha256')=='06c06537bfb73d2195ff96ecee3bc3551c4b5c656611b42c592be3ddfb67ca12', 'qualified_core239_contract_issuer_required'
+    for key,value in (('core_profile',239),('population',1024),('ann_bytes',34816)):
+        assert type(manifest.get(key)) is int and manifest[key]==value and type(binding.get(key)) is int and binding[key]==value, 'qualified_core239_geometry_required'
+    assert type(manifest.get('advance_threshold')) is int and manifest['advance_threshold']==3942, 'qualified_core239_advance_required'
+    assert manifest.get('cuda_architectures')==[86,120] and all(type(v) is int for v in manifest['cuda_architectures']), 'qualified_core239_devices_required'
+    assert isinstance(profile,dict) and profile.get('enabled') is False and not mixed, 'qualified_core239_p32_cuda_off_required'
+    assert type(manifest.get('cuda_default_threads_per_block')) is int and manifest['cuda_default_threads_per_block']==64, 'qualified_core239_cuda_threads_required'
+    expected_workers=512
+elif core238:
     expected_core,expected_algorithm,expected_authority,expected_contract=core238_profiles[source]
     assert mixed, 'qualified_core238_mixed_profile_required'
     assert type(manifest.get('core_profile')) is int and manifest['core_profile']==238, 'qualified_core238_profile_required'
@@ -161,7 +184,7 @@ if source=='94fced124b490eab6d6da30029f91a1fe96a21a3' or (mixed and not core238)
         assert type(manifest.get(key)) is int and manifest[key]==value, 'qualified_core237_geometry_required'
     assert manifest.get('cuda_architectures')==[86,120] and all(type(v) is int for v in manifest['cuda_architectures']), 'qualified_core237_cuda_architectures_required'
 assert type(workers) is int and workers==expected_workers, 'unqualified_cuda_worker_geometry'
-assert expected_workers!=512 or (manifest.get('population')==32 and profile is not None), 'cuda512_requires_qualified_p32_profile'
+assert expected_workers!=512 or ((manifest.get('population')==32 or core239) and profile is not None), 'cuda512_requires_qualified_reviewed_profile'
 if profile is None:
     threads=64;wait=60
 else:
