@@ -11,6 +11,14 @@ param(
 )
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
+
+# Restore the proven public entry branding even when hardware preflight fails.
+# Native telemetry remains the sole source of rates, epoch and solution counts.
+Write-Host ''
+Write-Host '+------------------------------------------------------------------------------+'
+Write-Host '|                               $0.01 IS CODED                                 |'
+Write-Host '+------------------------------------------------------------------------------+'
+Write-Host ''
 # CODED_WINDOWS_EXPLICIT_QA_GUARD_V1 (identical in entrypoint and bootstrap)
 function Assert-QualificationPath([string]$Path) {
   $full=[IO.Path]::GetFullPath($Path)
